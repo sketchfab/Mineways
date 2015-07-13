@@ -322,6 +322,12 @@ typedef struct ExportFileData
     UINT chkG3DMaterial;
 
     UINT flags;
+
+    // Sketchfab
+    char skfbApiToken[33];
+    char skfbName[49];
+    char skfbDescription[1025];
+    char skfbTags[256];
 } ExportFileData;
 
 #define MAX_OUTPUT_FILES 5

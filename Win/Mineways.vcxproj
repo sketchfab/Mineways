@@ -73,6 +73,8 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>false</LinkIncremental>
     <TargetName>$(ProjectName)32</TargetName>
+    <LibraryWPath>D:\shared\Mineways\Win\lib;$(LibraryWPath)</LibraryWPath>
+    <LibraryPath>D:\shared\Mineways\Win\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>false</LinkIncremental>
@@ -96,7 +98,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;comctl32.lib;shlwapi.lib;version.lib;zlibstat.lib;wininet.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;LIBCURL.LIB;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;comctl32.lib;shlwapi.lib;version.lib;zlibstat.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <IgnoreSpecificDefaultLibraries>LIBCMT.lib</IgnoreSpecificDefaultLibraries>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
     </Link>
@@ -134,7 +136,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;comctl32.lib;shlwapi.lib;version.lib;zlibstat.lib;wininet.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;comctl32.lib;shlwapi.lib;version.lib;zlibstat.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
     </Link>
   </ItemDefinitionGroup>
@@ -156,8 +158,6 @@
       <OptimizeReferences>true</OptimizeReferences>
       <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;comctl32.lib;shlwapi.lib;version.lib;zlibstat64.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <IgnoreSpecificDefaultLibraries>LIBCMT.lib</IgnoreSpecificDefaultLibraries>
-      <IgnoreAllDefaultLibraries>
-      </IgnoreAllDefaultLibraries>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -168,12 +168,14 @@
     <ClInclude Include="blockInfo.h" />
     <ClInclude Include="cache.h" />
     <ClInclude Include="ColorSchemes.h" />
+    <ClInclude Include="curl\picojson.h" />
     <ClInclude Include="ExportPrint.h" />
     <ClInclude Include="lodepng.h" />
     <ClInclude Include="Mineways.h" />
     <ClInclude Include="MinewaysMap.h" />
     <ClInclude Include="nbt.h" />
     <ClInclude Include="ObjFileManip.h" />
+    <ClInclude Include="publishSkfb.h" />
     <ClInclude Include="region.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="rwpng.h" />
@@ -202,6 +204,7 @@
     <ClCompile Include="MinewaysMap.cpp" />
     <ClCompile Include="nbt.cpp" />
     <ClCompile Include="ObjFileManip.cpp" />
+    <ClCompile Include="publishSkfb.cpp" />
     <ClCompile Include="region.cpp" />
     <ClCompile Include="rwpng.cpp" />
     <ClCompile Include="stdafx.cpp">

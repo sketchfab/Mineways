@@ -30,6 +30,7 @@ THE POSSIBILITY OF SUCH DAMAGE.
 #include "Mineways.h"
 #include "ColorSchemes.h"
 #include "ExportPrint.h"
+#include "publishSkfb.h"
 #include "XZip.h"
 #include "lodepng.h"
 #include <assert.h>
@@ -190,6 +191,7 @@ static void setSlider( HWND hWnd, HWND hwndSlider, HWND hwndLabel, int depth );
 static void syncCurrentHighlightDepth();
 static void copyOverExportPrintData( ExportFileData *pEFD );
 static int saveObjFile( HWND hWnd, wchar_t *objFileName, int printModel, wchar_t *terrainFileName, BOOL showDialog );
+static int publishToSketchfab( HWND hWnd, wchar_t *objFileName, wchar_t *terrainFileName, BOOL showDialog );
 static void PopupErrorDialogs( int errCode );
 static const wchar_t *removePath( const wchar_t *src );
 static void initializeExportDialogData();
@@ -1478,6 +1480,28 @@ InitEnable:
                 }
             }
             break;
+        case IDM_FILE_PUBLISHSKFB:
+            gPrintModel = 0; // Force it to be an obj export
+            gExportViewData.fileType = FILE_TYPE_WAVEFRONT_REL_OBJ;
+            // print model or render model - quite similar
+            ZeroMemory(&ofn,sizeof(OPENFILENAME));
+            ofn.lStructSize=sizeof(OPENFILENAME);
+            ofn.hwndOwner=hWnd;
+            ofn.lpstrFile=gExportPath;
+            //gExportPath[0]=0;
+            ofn.nMaxFile=MAX_PATH;
+
+            ofn.nFilterIndex=gExportViewData.fileType+1;
+            ofn.lpstrFileTitle=NULL;
+            ofn.nMaxFileTitle=0;
+            ofn.lpstrInitialDir=NULL;
+            ofn.Flags=OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+
+            // save file type selected, no matter what (even on cancel); we
+            // always set it because even if someone cancels a save, he probably still
+            // wanted the file type chosen.
+            publishToSketchfab(hWnd,L"Mineways2Skfb",gSelectTerrain,!gExported);
+            break;
         case IDM_JUMPSPAWN:
             gCurX=gSpawnX;
             gCurZ=gSpawnZ;
@@ -2289,7 +2313,7 @@ static int loadWorldList(HMENU menu)
         }
     } while (FindNextFile(hFind,&ffd)!=0);
     return oldVersionDetected;
-}
+} 
 
 static void enableBottomControl( int state, HWND hwndBottomSlider, HWND hwndBottomLabel, HWND hwndInfoBottomLabel )
 {
@@ -2325,6 +2349,7 @@ static void validateItems(HMENU menu)
         EnableMenuItem(menu,IDM_FILE_SAVEOBJ,MF_ENABLED);
         EnableMenuItem(menu,IDM_FILE_PRINTOBJ,MF_ENABLED);
         EnableMenuItem(menu,IDM_FILE_SCHEMATIC,MF_ENABLED);
+        EnableMenuItem(menu,IDM_FILE_PUBLISHSKFB,MF_ENABLED);
     }
     else
     {
@@ -2335,6 +2360,7 @@ static void validateItems(HMENU menu)
         EnableMenuItem(menu,IDM_FILE_PRINTOBJ,MF_DISABLED);
         EnableMenuItem(menu,IDM_FILE_SCHEMATIC,MF_DISABLED);
         EnableMenuItem(menu,IDM_VIEW_JUMPTOMODEL,MF_DISABLED);
+        EnableMenuItem(menu,IDM_FILE_PUBLISHSKFB,MF_DISABLED);
     }
     // has a save been done?
     if (gExported)
@@ -2458,6 +2484,167 @@ static void copyOverExportPrintData( ExportFileData *pEFD )
         if ( service == 0 )
             pEFD->comboModelUnits[dest[i]] = pEFD->comboModelUnits[source];
     }
+}
+
+int publishToSketchfab( HWND hWnd, wchar_t *objFileName, wchar_t *terrainFileName, BOOL showDialog )
+{
+    int on;
+    int retCode = 0;
+   gpEFD = &gExportViewData;
+    gOptions.exportFlags = 0x0;
+    gpEFD->flags = 0x0;
+    initializeExportDialogData();
+    gOptions.pEFD = gpEFD;
+
+    // normal output
+    GetHighlightState(&on, &gpEFD->minxVal, &gpEFD->minyVal, &gpEFD->minzVal, &gpEFD->maxxVal, &gpEFD->maxyVal, &gpEFD->maxzVal );
+
+    int miny = gpEFD->minyVal;
+    int maxy = gpEFD->maxyVal;
+
+    // affects default state of biome export, too.
+    gpEFD->chkBiome = ( gOptions.worldType & BIOMES ) ? TRUE : FALSE;
+
+    setPublishSkfbData(gpEFD);
+
+    if ( showDialog && !doPublishSkfb(hInst,hWnd) )
+    {
+        // canceled, so cancel output
+        return 0;
+    }
+
+    getPublishSkfbData(gpEFD);
+
+    copyOverExportPrintData(gpEFD);
+
+    // if user changed depths
+    if ( miny != gpEFD->minyVal || maxy != gpEFD->maxyVal )
+    {
+        // see if target did not change
+        if ( gTargetDepth <= gCurDepth )
+        {
+            gTargetDepth = gpEFD->minyVal;
+            gCurDepth = gpEFD->maxyVal;
+        }
+        else
+        {
+            gTargetDepth = gpEFD->maxyVal;
+            gCurDepth = gpEFD->minyVal;
+        }
+    }
+    SetHighlightState(on, gpEFD->minxVal, gpEFD->minyVal, gpEFD->minzVal, gpEFD->maxxVal, gpEFD->maxyVal, gpEFD->maxzVal );
+
+    // export all
+    if ( gpEFD->chkExportAll )
+    {
+        gOptions.saveFilterFlags = BLF_WHOLE | BLF_ALMOST_WHOLE | BLF_STAIRS | BLF_HALF | BLF_MIDDLER | BLF_BILLBOARD | BLF_PANE | BLF_FLATTOP |
+            BLF_FLATSIDE | BLF_3D_BIT;
+    }
+    else
+    {
+        gOptions.saveFilterFlags = BLF_WHOLE | BLF_ALMOST_WHOLE | BLF_STAIRS | BLF_HALF | BLF_MIDDLER | BLF_BILLBOARD | BLF_PANE | BLF_FLATTOP | BLF_FLATSIDE;
+    }
+
+    // Set options for Sketchfab publication
+    gOptions.exportFlags |= EXPT_OUTPUT_MATERIALS | EXPT_OUTPUT_TEXTURE_IMAGES | EXPT_GROUP_BY_MATERIAL;
+
+    gOptions.exportFlags |=
+        (gpEFD->chkHollow[gpEFD->fileType] ? EXPT_HOLLOW_BOTTOM : 0x0) |
+        ((gpEFD->chkHollow[gpEFD->fileType] && gpEFD->chkSuperHollow[gpEFD->fileType]) ? EXPT_HOLLOW_BOTTOM|EXPT_SUPER_HOLLOW_BOTTOM : 0x0) |
+
+        // materials are forced on if using debugging mode - just an internal override, doesn't need to happen in dialog.
+        (gpEFD->chkShowParts ? EXPT_DEBUG_SHOW_GROUPS|EXPT_OUTPUT_MATERIALS|EXPT_OUTPUT_OBJ_GROUPS|EXPT_OUTPUT_OBJ_MATERIAL_PER_TYPE : 0x0) |
+        (gpEFD->chkShowWelds ? EXPT_DEBUG_SHOW_WELDS|EXPT_OUTPUT_MATERIALS|EXPT_OUTPUT_OBJ_GROUPS|EXPT_OUTPUT_OBJ_MATERIAL_PER_TYPE : 0x0);
+
+    // set OBJ group and material output state
+    if ( gpEFD->chkMultipleObjects )
+    {
+        // note, can get overridden by EXPT_GROUP_BY_BLOCK being on.
+        gOptions.exportFlags |= EXPT_OUTPUT_OBJ_GROUPS;
+
+        if ( gpEFD->chkMaterialPerType )
+        {
+            gOptions.exportFlags |= EXPT_OUTPUT_OBJ_MATERIAL_PER_TYPE;
+
+            if ( gpEFD->chkG3DMaterial )
+            {
+                gOptions.exportFlags |= EXPT_OUTPUT_OBJ_FULL_MATERIAL;
+                if ( gOptions.exportFlags & (EXPT_OUTPUT_TEXTURE_IMAGES|EXPT_OUTPUT_TEXTURE_SWATCHES))
+                {
+                    // G3D - use only if textures are on.
+                    gOptions.exportFlags |= EXPT_OUTPUT_OBJ_NEUTRAL_MATERIAL;
+                }
+            }
+        }
+        // check if we're exporting relative coordinates
+        if ( gpEFD->fileType == FILE_TYPE_WAVEFRONT_REL_OBJ )
+        {
+            gOptions.exportFlags |= EXPT_OUTPUT_OBJ_REL_COORDINATES;
+        }
+    }
+    if ( gpEFD->chkBiome )
+    {
+        gOptions.exportFlags |= EXPT_BIOME;
+    }
+
+    // OK, all set, let's go!
+    FileList outputFileList;
+    outputFileList.count = 0;
+    if ( on ) {
+
+        // redraw, in case the bounds were changed
+        draw();
+        InvalidateRect(hWnd, NULL, FALSE);
+        UpdateWindow(hWnd);
+        gpEFD->radioScaleToHeight = 1;
+        gpEFD->radioScaleByCost = 0;
+
+        int errCode = SaveVolume(objFileName, gpEFD->fileType, &gOptions, gWorld, gCurrentDirectory,
+            gpEFD->minxVal, gpEFD->minyVal, gpEFD->minzVal, gpEFD->maxxVal, gpEFD->maxyVal, gpEFD->maxzVal,
+            updateProgress, terrainFileName, &outputFileList, (int)gMajorVersion, (int)gMinorVersion);
+
+        // note how many files were output
+        retCode = outputFileList.count;
+
+        // zip it up - test that there's something to zip, in case of errors. Note that the first
+        // file saved in ObjManip.c is the one used as the zip file's name.
+        wchar_t wcZip[MAX_PATH];
+        LPTSTR tempdir = new TCHAR[MAX_PATH];
+        GetTempPath(MAX_PATH, tempdir);
+        // we add .zip not (just) out of laziness, but this helps differentiate obj from wrl from stl.
+        // Get temporary file and set it here
+        swprintf_s(wcZip, MAX_PATH, L"%s\\%s.zip", tempdir, outputFileList.name[0]);
+        DeleteFile(wcZip);
+        HZIP hz = CreateZip(wcZip,0,ZIP_FILENAME);
+        for ( int i = 0; i < outputFileList.count; i++ )
+        {
+            const wchar_t *nameOnly = removePath( outputFileList.name[i] ) ;
+
+            if (*updateProgress)
+            { (*updateProgress)(0.90f + 0.10f*(float)i/(float)outputFileList.count);}
+
+            ZipAdd(hz,nameOnly, outputFileList.name[i], 0, ZIP_FILENAME);
+
+            // delete model files if not needed
+            if ( !gpEFD->chkCreateModelFiles[gpEFD->fileType] )
+            {
+                DeleteFile(outputFileList.name[i]);
+            }
+        }
+        CloseZip(hz);
+
+        if (*updateProgress)
+        { (*updateProgress)(1.0f);}
+
+        if ( errCode != MW_NO_ERROR )
+        {
+            PopupErrorDialogs( errCode );
+        }
+
+        uploadToSketchfab(wcZip, gpEFD->skfbApiToken, gpEFD->skfbName, gpEFD->skfbDescription, gpEFD->skfbTags);
+    }
+
+    return retCode;
 }
 
 // returns number of files written on successful export, 0 files otherwise.
