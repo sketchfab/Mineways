@@ -220,6 +220,9 @@ extern UnitType gUnitTypeTable[];
 // use biomes for export
 #define EXPT_BIOME							0x2000000
 
+// sketchfab only RGBA flag
+#define SKFB_TEXTURE_EXPORT						0x4000000
+
 #define EP_FIELD_LENGTH 20
 
 // linked to the ofn.lpstrFilter in Mineways.cpp
@@ -320,6 +323,12 @@ typedef struct ExportFileData
     UINT chkG3DMaterial;
 
     UINT flags;
+
+    // Sketchfab
+    char skfbApiToken[33];
+    char skfbName[49];
+    char skfbDescription[1025];
+    char skfbTags[256];
 } ExportFileData;
 
 #define MAX_OUTPUT_FILES 5

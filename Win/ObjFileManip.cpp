@@ -13466,9 +13466,17 @@ static int writeOBJMtlFile()
             {
                 // cutouts or alpha
                 gModel.usesRGBA = 1;
-                gModel.usesAlpha = 1;
+                if ( !(gOptions->exportFlags & SKFB_TEXTURE_EXPORT))
+                {
+                    gModel.usesAlpha = 1;
+                    sprintf_s(mapdString,256,"map_d %s\n", textureAlpha );
+                }
+                else
+                {
+                    gModel.usesAlpha = 0;
+                }
+
                 typeTextureFileName = textureRGBA;
-                sprintf_s(mapdString,256,"map_d %s\n", textureAlpha );
             }
             else
             {
