@@ -1497,9 +1497,6 @@ InitEnable:
             ofn.lpstrInitialDir=NULL;
             ofn.Flags=OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
 
-            // save file type selected, no matter what (even on cancel); we
-            // always set it because even if someone cancels a save, he probably still
-            // wanted the file type chosen.
             publishToSketchfab(hWnd,L"Mineways2Skfb",gSelectTerrain,!gExported);
             break;
         case IDM_JUMPSPAWN:
@@ -2490,23 +2487,28 @@ int publishToSketchfab( HWND hWnd, wchar_t *objFileName, wchar_t *terrainFileNam
 {
     int on;
     int retCode = 0;
-   gpEFD = &gExportViewData;
+
+    // set 'export for rendering' settings
+    gpEFD = &gExportViewData;
     gOptions.exportFlags = 0x0;
     gpEFD->flags = 0x0;
-    initializeExportDialogData();
+
     gOptions.pEFD = gpEFD;
 
-    // normal output
+    // get selected zone bounds
     GetHighlightState(&on, &gpEFD->minxVal, &gpEFD->minyVal, &gpEFD->minzVal, &gpEFD->maxxVal, &gpEFD->maxyVal, &gpEFD->maxzVal );
 
     int miny = gpEFD->minyVal;
     int maxy = gpEFD->maxyVal;
 
     // affects default state of biome export, too.
+    // Probably not mandatory
     gpEFD->chkBiome = ( gOptions.worldType & BIOMES ) ? TRUE : FALSE;
 
+    // set epd in PublishSkfb data
     setPublishSkfbData(gpEFD);
 
+    // Open dialog and get user data
     if ( showDialog && !doPublishSkfb(hInst,hWnd) )
     {
         // canceled, so cancel output
@@ -2514,8 +2516,8 @@ int publishToSketchfab( HWND hWnd, wchar_t *objFileName, wchar_t *terrainFileNam
     }
 
     getPublishSkfbData(gpEFD);
-
-    copyOverExportPrintData(gpEFD);
+    // Do not copy settings between export options
+/*    copyOverExportPrintData(gpEFD);*/
 
     // if user changed depths
     if ( miny != gpEFD->minyVal || maxy != gpEFD->maxyVal )
@@ -2532,9 +2534,10 @@ int publishToSketchfab( HWND hWnd, wchar_t *objFileName, wchar_t *terrainFileNam
             gCurDepth = gpEFD->minyVal;
         }
     }
+    // get zone bounds
     SetHighlightState(on, gpEFD->minxVal, gpEFD->minyVal, gpEFD->minzVal, gpEFD->maxxVal, gpEFD->maxyVal, gpEFD->maxzVal );
 
-    // export all
+    // export all ellements for Skfb
     if ( gpEFD->chkExportAll )
     {
         gOptions.saveFilterFlags = BLF_WHOLE | BLF_ALMOST_WHOLE | BLF_STAIRS | BLF_HALF | BLF_MIDDLER | BLF_BILLBOARD | BLF_PANE | BLF_FLATTOP |
@@ -2545,7 +2548,12 @@ int publishToSketchfab( HWND hWnd, wchar_t *objFileName, wchar_t *terrainFileNam
         gOptions.saveFilterFlags = BLF_WHOLE | BLF_ALMOST_WHOLE | BLF_STAIRS | BLF_HALF | BLF_MIDDLER | BLF_BILLBOARD | BLF_PANE | BLF_FLATTOP | BLF_FLATSIDE;
     }
 
-    // Set options for Sketchfab publication
+    // Set options for Sketchfab publication:
+    /*
+        - Export materials
+        - Export textures
+        - group objects by materials (?)
+    */
     gOptions.exportFlags |= EXPT_OUTPUT_MATERIALS | EXPT_OUTPUT_TEXTURE_IMAGES | EXPT_GROUP_BY_MATERIAL;
 
     gOptions.exportFlags |=
