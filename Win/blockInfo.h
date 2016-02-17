@@ -328,6 +328,10 @@ typedef struct ExportFileData
     char skfbName[49];
     char skfbDescription[1025];
     char skfbTags[256];
+    bool skfbPrivate;
+    bool skfbUsePassword;
+    char skfbPassword[25];
+    bool skfbDraft;
 } ExportFileData;
 
 #define MAX_OUTPUT_FILES 5

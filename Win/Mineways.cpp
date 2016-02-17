@@ -191,7 +191,7 @@ static void setSlider( HWND hWnd, HWND hwndSlider, HWND hwndLabel, int depth );
 static void syncCurrentHighlightDepth();
 static void copyOverExportPrintData( ExportFileData *pEFD );
 static int saveObjFile( HWND hWnd, wchar_t *objFileName, int printModel, wchar_t *terrainFileName, BOOL showDialog );
-static int publishToSketchfab( HWND hWnd, wchar_t *objFileName, wchar_t *terrainFileName, BOOL showDialog );
+static int publishToSketchfab( HWND hWnd, wchar_t *objFileName, wchar_t *terrainFileName);
 static void PopupErrorDialogs( int errCode );
 static const wchar_t *removePath( const wchar_t *src );
 static void initializeExportDialogData();
@@ -1481,14 +1481,13 @@ InitEnable:
             }
             break;
         case IDM_FILE_PUBLISHSKFB:
-            gPrintModel = 0; // Force it to be an obj export
+            // Force it to be an rendering export: Relative obj
+            gPrintModel = 0;
             gExportViewData.fileType = FILE_TYPE_WAVEFRONT_REL_OBJ;
-            // print model or render model - quite similar
             ZeroMemory(&ofn,sizeof(OPENFILENAME));
             ofn.lStructSize=sizeof(OPENFILENAME);
             ofn.hwndOwner=hWnd;
             ofn.lpstrFile=gExportPath;
-            //gExportPath[0]=0;
             ofn.nMaxFile=MAX_PATH;
 
             ofn.nFilterIndex=gExportViewData.fileType+1;
@@ -1497,7 +1496,7 @@ InitEnable:
             ofn.lpstrInitialDir=NULL;
             ofn.Flags=OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
 
-            publishToSketchfab(hWnd,L"Mineways2Skfb",gSelectTerrain,!gExported);
+            publishToSketchfab(hWnd,L"Mineways2Skfb",gSelectTerrain);
             break;
         case IDM_JUMPSPAWN:
             gCurX=gSpawnX;
@@ -2483,7 +2482,7 @@ static void copyOverExportPrintData( ExportFileData *pEFD )
     }
 }
 
-int publishToSketchfab( HWND hWnd, wchar_t *objFileName, wchar_t *terrainFileName, BOOL showDialog )
+int publishToSketchfab( HWND hWnd, wchar_t *objFileName, wchar_t *terrainFileName)
 {
     int on;
     int retCode = 0;
@@ -2503,21 +2502,21 @@ int publishToSketchfab( HWND hWnd, wchar_t *objFileName, wchar_t *terrainFileNam
 
     // affects default state of biome export, too.
     // Probably not mandatory
-    gpEFD->chkBiome = ( gOptions.worldType & BIOMES ) ? TRUE : FALSE;
+    /*    gpEFD->chkBiome = ( gOptions.worldType & BIOMES ) ? TRUE : FALSE;*/
 
     // set epd in PublishSkfb data
     setPublishSkfbData(gpEFD);
 
     // Open dialog and get user data
-    if ( showDialog && !doPublishSkfb(hInst,hWnd) )
+    if ( !doPublishSkfb(hInst,hWnd) )
     {
         // canceled, so cancel output
         return 0;
     }
-
+    // Get updated version of export data (api token, etc)
     getPublishSkfbData(gpEFD);
     // Do not copy settings between export options
-/*    copyOverExportPrintData(gpEFD);*/
+    /*    copyOverExportPrintData(gpEFD);*/
 
     // if user changed depths
     if ( miny != gpEFD->minyVal || maxy != gpEFD->maxyVal )
@@ -2538,15 +2537,8 @@ int publishToSketchfab( HWND hWnd, wchar_t *objFileName, wchar_t *terrainFileNam
     SetHighlightState(on, gpEFD->minxVal, gpEFD->minyVal, gpEFD->minzVal, gpEFD->maxxVal, gpEFD->maxyVal, gpEFD->maxzVal );
 
     // export all ellements for Skfb
-    if ( gpEFD->chkExportAll )
-    {
-        gOptions.saveFilterFlags = BLF_WHOLE | BLF_ALMOST_WHOLE | BLF_STAIRS | BLF_HALF | BLF_MIDDLER | BLF_BILLBOARD | BLF_PANE | BLF_FLATTOP |
-            BLF_FLATSIDE | BLF_3D_BIT;
-    }
-    else
-    {
-        gOptions.saveFilterFlags = BLF_WHOLE | BLF_ALMOST_WHOLE | BLF_STAIRS | BLF_HALF | BLF_MIDDLER | BLF_BILLBOARD | BLF_PANE | BLF_FLATTOP | BLF_FLATSIDE;
-    }
+    gOptions.saveFilterFlags = BLF_WHOLE | BLF_ALMOST_WHOLE | BLF_STAIRS | BLF_HALF | BLF_MIDDLER | BLF_BILLBOARD | BLF_PANE | BLF_FLATTOP |
+        BLF_FLATSIDE | BLF_3D_BIT;
 
     // Set options for Sketchfab publication:
     /*
@@ -2564,36 +2556,12 @@ int publishToSketchfab( HWND hWnd, wchar_t *objFileName, wchar_t *terrainFileNam
         (gpEFD->chkShowParts ? EXPT_DEBUG_SHOW_GROUPS|EXPT_OUTPUT_MATERIALS|EXPT_OUTPUT_OBJ_GROUPS|EXPT_OUTPUT_OBJ_MATERIAL_PER_TYPE : 0x0) |
         (gpEFD->chkShowWelds ? EXPT_DEBUG_SHOW_WELDS|EXPT_OUTPUT_MATERIALS|EXPT_OUTPUT_OBJ_GROUPS|EXPT_OUTPUT_OBJ_MATERIAL_PER_TYPE : 0x0);
 
-    // set OBJ group and material output state
-    if ( gpEFD->chkMultipleObjects )
-    {
-        // note, can get overridden by EXPT_GROUP_BY_BLOCK being on.
-        gOptions.exportFlags |= EXPT_OUTPUT_OBJ_GROUPS;
-
-        if ( gpEFD->chkMaterialPerType )
-        {
-            gOptions.exportFlags |= EXPT_OUTPUT_OBJ_MATERIAL_PER_TYPE;
-
-            if ( gpEFD->chkG3DMaterial )
-            {
-                gOptions.exportFlags |= EXPT_OUTPUT_OBJ_FULL_MATERIAL;
-                if ( gOptions.exportFlags & (EXPT_OUTPUT_TEXTURE_IMAGES|EXPT_OUTPUT_TEXTURE_SWATCHES))
-                {
-                    // G3D - use only if textures are on.
-                    gOptions.exportFlags |= EXPT_OUTPUT_OBJ_NEUTRAL_MATERIAL;
-                }
-            }
-        }
-        // check if we're exporting relative coordinates
-        if ( gpEFD->fileType == FILE_TYPE_WAVEFRONT_REL_OBJ )
-        {
-            gOptions.exportFlags |= EXPT_OUTPUT_OBJ_REL_COORDINATES;
-        }
-    }
-    if ( gpEFD->chkBiome )
-    {
-        gOptions.exportFlags |= EXPT_BIOME;
-    }
+    gOptions.exportFlags |= EXPT_OUTPUT_OBJ_GROUPS; // export groups
+    gOptions.exportFlags |= EXPT_OUTPUT_OBJ_MATERIAL_PER_TYPE; // the norm, instead of single material
+    gOptions.exportFlags |= EXPT_OUTPUT_OBJ_FULL_MATERIAL; // Full material (output the extra values)
+    gOptions.exportFlags |= EXPT_OUTPUT_TEXTURE_IMAGES; // Export block full texture
+    gOptions.exportFlags |= EXPT_OUTPUT_OBJ_REL_COORDINATES; // OBj relative coordinates
+    gOptions.exportFlags |= EXPT_BIOME; // Use biome for export. Currently only the biome at the center of the zone is supported
 
     // OK, all set, let's go!
     FileList outputFileList;
@@ -2611,16 +2579,11 @@ int publishToSketchfab( HWND hWnd, wchar_t *objFileName, wchar_t *terrainFileNam
             gpEFD->minxVal, gpEFD->minyVal, gpEFD->minzVal, gpEFD->maxxVal, gpEFD->maxyVal, gpEFD->maxzVal,
             updateProgress, terrainFileName, &outputFileList, (int)gMajorVersion, (int)gMinorVersion);
 
-        // note how many files were output
-        retCode = outputFileList.count;
-
-        // zip it up - test that there's something to zip, in case of errors. Note that the first
-        // file saved in ObjManip.c is the one used as the zip file's name.
+        // Build the .zip: Note that the first file saved in ObjManip.c is the one used as the zip file's name
         wchar_t wcZip[MAX_PATH];
         LPTSTR tempdir = new TCHAR[MAX_PATH];
+        // Zip will be written in temp directory before being uploaded on Sketchfab
         GetTempPath(MAX_PATH, tempdir);
-        // we add .zip not (just) out of laziness, but this helps differentiate obj from wrl from stl.
-        // Get temporary file and set it here
         swprintf_s(wcZip, MAX_PATH, L"%s\\%s.zip", tempdir, outputFileList.name[0]);
         DeleteFile(wcZip);
         HZIP hz = CreateZip(wcZip,0,ZIP_FILENAME);
@@ -2629,7 +2592,7 @@ int publishToSketchfab( HWND hWnd, wchar_t *objFileName, wchar_t *terrainFileNam
             const wchar_t *nameOnly = removePath( outputFileList.name[i] ) ;
 
             if (*updateProgress)
-            { (*updateProgress)(0.90f + 0.10f*(float)i/(float)outputFileList.count);}
+            { (*updateProgress)(0.10f + 0.10f*(float)i/(float)outputFileList.count);}
 
             ZipAdd(hz,nameOnly, outputFileList.name[i], 0, ZIP_FILENAME);
 
@@ -2649,7 +2612,7 @@ int publishToSketchfab( HWND hWnd, wchar_t *objFileName, wchar_t *terrainFileNam
             PopupErrorDialogs( errCode );
         }
 
-        uploadToSketchfab(wcZip, gpEFD->skfbApiToken, gpEFD->skfbName, gpEFD->skfbDescription, gpEFD->skfbTags);
+        uploadToSketchfab(wcZip, progressBar, gpEFD->skfbApiToken, gpEFD->skfbName, gpEFD->skfbDescription, gpEFD->skfbTags, gpEFD->skfbDraft, gpEFD->skfbPrivate, gpEFD->skfbPassword);
     }
 
     return retCode;

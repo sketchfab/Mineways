@@ -13882,7 +13882,7 @@ static int solidTable[] = { BLOCK_WATER, BLOCK_STATIONARY_WATER, BLOCK_LAVA, BLO
 // ladder, trapdoor, three torches, two rails, powered rail, detector rail, lily, wire
 #define COMPOSITE_TABLE_SIZE 23
 CompositeSwatchPreset compositeTable[COMPOSITE_TABLE_SIZE] =
-{ 
+{
     /* MUST BE FIRST IN LIST, code rotates this one - rotated */ { SWATCH_INDEX( 5, 10 ), /* BLOCK_REDSTONE_WIRE */ SWATCH_INDEX( 1, 0 ) }, // wire over stone, vertical
     { SWATCH_INDEX( 0, 8 ), /* BLOCK_RAILS */ SWATCH_INDEX( 1, 0 ) }, // rail over stone
     { SWATCH_INDEX( 0, 7 ), /* BLOCK_RAILS */ SWATCH_INDEX( 1, 0 ) }, // curved rail over stone
