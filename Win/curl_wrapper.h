@@ -4,7 +4,6 @@
 #include "curl/curl.h"
 #include "stdafx.h"
 
-#define MINIMAL_PROGRESS_FUNCTIONALITY_INTERVAL     1
 
 curl_off_t hu = -1;
 struct myprogress {

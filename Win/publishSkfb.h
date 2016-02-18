@@ -1,6 +1,10 @@
 #include "ExportPrint.h"
 #include<string>
 
+static PublishSkfbData skfbPbdata;
+static std::pair<bool, std::string> lastResponse;
+static HWND uploadWindow;
+
 class PublishSkfb
 {
 public:
@@ -8,7 +12,7 @@ public:
     ~PublishSkfb(void);
 };
 
-void getPublishSkfbData(ExportFileData *pEpd);
-void setPublishSkfbData(ExportFileData *pEpd);
+void getPublishSkfbData(PublishSkfbData *pEpd);
+void setPublishSkfbData(PublishSkfbData *pEpd);
 int doPublishSkfb(HINSTANCE hInst,HWND hWnd);
-int uploadToSketchfab(wchar_t* wcZip, HWND progressBar, std::string api_token, std::string name, std::string description, std::string tags, bool draft, bool usePrivate, std::string password);
+int uploadToSketchfab(HINSTANCE hInst,HWND hWnd);

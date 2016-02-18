@@ -30,11 +30,13 @@ THE POSSIBILITY OF SUCH DAMAGE.
 #include "publishSkfb.h"
 #include "Resource.h"
 #include <sstream>
+#include <Windowsx.h>
 
-#define IS_STL ((epd.fileType == FILE_TYPE_ASCII_STL)||(epd.fileType == FILE_TYPE_BINARY_MAGICS_STL)||(epd.fileType == FILE_TYPE_BINARY_VISCAM_STL))
-
-static int prevPhysMaterial;
-static int curPhysMaterial;
+#define SKFB_NAME_LIMIT         48
+#define SKFB_DESC_LIMIT         1024
+#define SKFB_TAG_LIMIT          39   // 48 but "mineways " is automatically added so - 9
+#define SKFB_TOKEN_LIMIT        32
+#define SKFB_PASSWORD_LIMIT     64
 
 PublishSkfb::PublishSkfb(void)
 {
@@ -46,40 +48,33 @@ PublishSkfb::~PublishSkfb(void)
 }
 
 
-void getPublishSkfbData(ExportFileData *pEpd)
+void getPublishSkfbData(PublishSkfbData *pSkfbpd)
 {
-    *pEpd = epd;
+    *pSkfbpd = skfbPbdata;
 }
 
-void setPublishSkfbData(ExportFileData *pEpd)
+void setPublishSkfbData(PublishSkfbData *pSkfbpd)
 {
-    epd = *pEpd;
+    skfbPbdata = *pSkfbpd;
 }
 
-int uploadToSketchfab(wchar_t* wcZip, HWND progressBar, std::string api_token, std::string name, std::string description, std::string tags, bool draft, bool usePrivate, std::string password)
+DWORD WINAPI thread_func(LPVOID lpParameter)
 {
-    SketchfabV2Uploader uploader(api_token);
-    std::wstring file(wcZip);
-    std::string filepath(file.begin(), file.end());
-    std::string uid = uploader.upload(progressBar, filepath, name, description, tags, draft, usePrivate, password);
-    if (!uid.empty()) {
-        std::string status = uploader.poll(uid);
-        std::string pp = ("http://sketchfab.com/models/" + uid);
-        wchar_t* wString = new wchar_t[4096];
-        MultiByteToWideChar(CP_ACP, 0, pp.c_str(), -1, wString, 4096);
-        LPCWSTR uu = LPCWSTR(pp.c_str());
-        ShellExecute(NULL, L"open", wString,
-                    NULL, NULL, SW_SHOWNORMAL);
-        if (status == "SUCCEEDED") {
-            std::cout << "Check out: " << uploader.model_url(uid) << std::endl;
-            return 0;
-        }
-    }
+    SketchfabV2Uploader uploader;
+    lastResponse = uploader.upload(uploadWindow, skfbPbdata.skfbApiToken, skfbPbdata.skfbFilePath, skfbPbdata.skfbName, skfbPbdata.skfbDescription, skfbPbdata.skfbTags, skfbPbdata.skfbDraft, skfbPbdata.skfbPrivate, skfbPbdata.skfbPassword);
+    SendMessage(uploadWindow, SIGNAL_UPLOAD_FINISHED, 100, 0);
+    return 0;
+}
 
+int uploadToSketchfab(HINSTANCE hInst,HWND hWnd)
+{
+    DialogBox(hInst,MAKEINTRESOURCE(IDD_UPLOAD_SKFB),hWnd, manageUploadWindow);
+    // Success or failure are handled in the callback function
     return 0;
 }
 
 INT_PTR CALLBACK PublishSkfb(HWND hDlg,UINT message,WPARAM wParam,LPARAM lParam);
+INT_PTR CALLBACK manageUploadWindow(HWND hDlg,UINT message,WPARAM wParam,LPARAM lParam);
 
 int doPublishSkfb(HINSTANCE hInst,HWND hWnd)
 {
@@ -88,6 +83,71 @@ int doPublishSkfb(HINSTANCE hInst,HWND hWnd)
     // did we hit cancel?
     return gOK;
 }
+INT_PTR CALLBACK manageUploadWindow(HWND hDlg,UINT message,WPARAM wParam,LPARAM lParam)
+{
+    UNREFERENCED_PARAMETER(lParam);
+    HANDLE uploadThreadHandle = NULL;
+	uploadWindow = hDlg;
+
+    static int focus = -1;
+
+    switch (message)
+    {
+    case WM_INITDIALOG:
+        {
+            uploadThreadHandle = CreateThread(NULL, 0, thread_func, NULL, 0, 0);
+            break;
+        }
+    case SIGNAL_UPLOAD_FINISHED:
+    {
+        if(lastResponse.first){ // Upload succeeded
+            int retcode= MessageBox(NULL,
+                                    _T("Your model has been successfuly uploaded on Sketchfab.\nClick OK to open a tab on the model page"),
+                                    _T("Upload successful"),
+                                    MB_OKCANCEL | MB_ICONINFORMATION);
+            if(retcode == IDOK)
+            {
+                std::string pp = ("http://sketchfab-local.com/models/" + lastResponse.second);
+                wchar_t* wString = new wchar_t[4096];
+                MultiByteToWideChar(CP_ACP, 0, pp.c_str(), pp.size() + 1, wString, 4096);
+                ShellExecute(NULL, L"open", wString, NULL, NULL, SW_SHOWNORMAL);
+            }
+        }
+        else { // Upload failed
+            std::vector<wchar_t> buf(MultiByteToWideChar(CP_ACP, 0, lastResponse.second.c_str(), lastResponse.second.size() + 1, 0, 0));
+            MultiByteToWideChar(CP_ACP, 0, lastResponse.second.c_str(), lastResponse.second.size() + 1, &buf[0], buf.size());
+            std::wstring toto(&buf[0]);
+            MessageBox(NULL,
+				       toto.c_str(),
+                       L"Upload failed",
+                       MB_OKCANCEL | MB_ICONERROR);
+        }
+
+        EndDialog(hDlg, (INT_PTR)TRUE);
+        std::cout << "oo";
+        return (INT_PTR)TRUE;
+        break;
+    }
+    case WM_COMMAND:
+        switch (LOWORD(wParam))
+        {
+            case IDC_SKFB_UPLOAD_PROGRESS:
+            {
+
+                break;
+            }
+            case IDC_SKFB_UPLOAD_CANCEL:
+                TerminateThread(uploadThreadHandle, 1);
+                EndDialog(hDlg, (INT_PTR)FALSE);
+                MessageBox(NULL,
+                        _T("Upload cancelled by the user"), _T("Upload interrupted"), MB_OK | MB_ICONERROR);
+                return (INT_PTR)FALSE;
+            }
+            break;
+    }
+    return (INT_PTR)FALSE;
+}
+
 
 INT_PTR CALLBACK PublishSkfb(HWND hDlg,UINT message,WPARAM wParam,LPARAM lParam)
 {
@@ -99,37 +159,20 @@ INT_PTR CALLBACK PublishSkfb(HWND hDlg,UINT message,WPARAM wParam,LPARAM lParam)
     {
     case WM_INITDIALOG:
         {
-            sprintf_s(epd.minxString,EP_FIELD_LENGTH,"%d",epd.minxVal);
-            sprintf_s(epd.minyString,EP_FIELD_LENGTH,"%d",epd.minyVal);
-            sprintf_s(epd.minzString,EP_FIELD_LENGTH,"%d",epd.minzVal);
-            sprintf_s(epd.maxxString,EP_FIELD_LENGTH,"%d",epd.maxxVal);
-            sprintf_s(epd.maxyString,EP_FIELD_LENGTH,"%d",epd.maxyVal);
-            sprintf_s(epd.maxzString,EP_FIELD_LENGTH,"%d",epd.maxzVal);
-
-            SetDlgItemTextA(hDlg,IDC_WORLD_MIN_X,epd.minxString);
-            SetDlgItemTextA(hDlg,IDC_WORLD_MIN_Y,epd.minyString);
-            SetDlgItemTextA(hDlg,IDC_WORLD_MIN_Z,epd.minzString);
-            SetDlgItemTextA(hDlg,IDC_WORLD_MAX_X,epd.maxxString);
-            SetDlgItemTextA(hDlg,IDC_WORLD_MAX_Y,epd.maxyString);
-            SetDlgItemTextA(hDlg,IDC_WORLD_MAX_Z,epd.maxzString);
-
-            CheckDlgButton(hDlg,IDC_EXPORT_ALL,epd.chkExportAll);
-            CheckDlgButton(hDlg,IDC_FATTEN,epd.chkExportAll?epd.chkFatten:BST_INDETERMINATE);
-            CheckDlgButton(hDlg,IDC_CENTER_MODEL,epd.chkCenterModel);
-            CheckDlgButton(hDlg,IDC_INDIVIDUAL_BLOCKS,epd.chkIndividualBlocks);
-            CheckDlgButton(hDlg,IDC_BIOME,epd.chkBiome);
-
-            CheckDlgButton(hDlg,IDC_RADIO_ROTATE_0,epd.radioRotate0);
-            CheckDlgButton(hDlg,IDC_RADIO_ROTATE_90,epd.radioRotate90);
-            CheckDlgButton(hDlg,IDC_RADIO_ROTATE_180,epd.radioRotate180);
-            CheckDlgButton(hDlg,IDC_RADIO_ROTATE_270,epd.radioRotate270);
-
-            epd.radioScaleToHeight = 1;
-
-            // OBJ options: gray out if OBJ not in use
-            CheckDlgButton(hDlg,IDC_MULTIPLE_OBJECTS,epd.chkMultipleObjects);
-            CheckDlgButton(hDlg,IDC_MATERIAL_PER_TYPE,epd.chkMultipleObjects?epd.chkMaterialPerType:BST_INDETERMINATE);
-            CheckDlgButton(hDlg,IDC_G3D_MATERIAL,(epd.chkMultipleObjects && epd.chkMaterialPerType)?epd.chkG3DMaterial:BST_INDETERMINATE);
+            // Init control values (saved from last upload during if any during this sessino)
+            SetDlgItemTextA(hDlg,IDC_SKFB_NAME,skfbPbdata.skfbName);
+            SetDlgItemTextA(hDlg,IDC_SKFB_TAG,skfbPbdata.skfbTags);
+            SetDlgItemTextA(hDlg,IDC_SKFB_DESC,skfbPbdata.skfbDescription);
+            SetDlgItemTextA(hDlg,IDC_SKFB_API_TOKEN,skfbPbdata.skfbApiToken);
+            SetDlgItemTextA(hDlg,IDC_SKFB_PASSWORDFIELD,skfbPbdata.skfbPassword);
+            CheckDlgButton(hDlg,IDC_SKFB_DRAFT,(skfbPbdata.skfbDraft == false));
+            CheckDlgButton(hDlg,IDC_SKFB_PRIVATE,skfbPbdata.skfbPrivate);
+            Edit_LimitText(GetDlgItem(hDlg, IDC_SKFB_NAME), SKFB_NAME_LIMIT);
+            Edit_LimitText(GetDlgItem(hDlg, IDC_SKFB_TAG), SKFB_TAG_LIMIT);
+            Edit_LimitText(GetDlgItem(hDlg, IDC_SKFB_DESC), SKFB_DESC_LIMIT);
+            Edit_LimitText(GetDlgItem(hDlg, IDC_SKFB_API_TOKEN), SKFB_TOKEN_LIMIT);
+            Edit_LimitText(GetDlgItem(hDlg, IDC_SKFB_PASSWORDFIELD), SKFB_PASSWORD_LIMIT);
+            EnableWindow(GetDlgItem(hDlg, IDC_SKFB_PASSWORDFIELD), IsDlgButtonChecked(hDlg, IDC_SKFB_PRIVATE));
         }
         return (INT_PTR)TRUE;
     case WM_COMMAND:
@@ -138,111 +181,36 @@ INT_PTR CALLBACK PublishSkfb(HWND hDlg,UINT message,WPARAM wParam,LPARAM lParam)
     // Popup openon model page + progress bar + remove world coordinates
         switch (LOWORD(wParam))
         {
-            case IDC_SKFB_NAME:
-            {
-                char name[48];
-                GetDlgItemTextA(hDlg, IDC_SKFB_NAME, name, 48);
-                std::string toto(name);
-                std::stringstream ss;
-                ss << " " << toto.size() << "/48";
-                SetDlgItemTextA(hDlg, IDC_SKFB_NAME_LIMIT, ss.str().c_str());
-                break;
-            }
-            case IDC_SKFB_DESC:
-            {
-                char description[1026];
-                GetDlgItemTextA(hDlg, IDC_SKFB_DESC, description, 1026);
-                std::string toto(description);
-                std::stringstream ss;
-                ss << " " << toto.size() << " / 1024";
-                SetDlgItemTextA(hDlg, IDC_SKFB_DESC_LIMIT, ss.str().c_str());
-                if (toto.size() > 1024)
-                {
-                    SetDlgItemTextA(hDlg, IDC_SKFB_DESC_LIMIT, "Description is too long");
-                }
-                break;
-            }
             case IDC_SKFB_CLAIM_TOKEN:
             {
-                ShellExecute(NULL, L"open", L"http://sketchfab-local.com/settings/password",
+                ShellExecute(NULL, L"open", L"http://sketchfab.com/settings/password",
                     NULL, NULL, SW_SHOWNORMAL);
                 break;
             }
             case IDC_SKFB_PRIVATE:
             {
-                HWND passwordField = GetDlgItem(hDlg, IDC_SKFB_PASSWORDFIELD);
-                UINT isChecked = IsDlgButtonChecked(hDlg, IDC_SKFB_PRIVATE);
-                if (isChecked){
-                    EnableWindow(passwordField, TRUE);
-                    CheckDlgButton(hDlg, IDC_SKFB_DRAFT, isChecked ? epd.chkSuperHollow[epd.fileType] : BST_INDETERMINATE);
-                }
-                else
-                {
-                    EnableWindow(passwordField, FALSE);
-                    CheckDlgButton(hDlg, IDC_SKFB_PRIVATE, isChecked ? epd.chkSuperHollow[epd.fileType] : BST_UNCHECKED);
-                }
+                EnableWindow(GetDlgItem(hDlg, IDC_SKFB_PASSWORDFIELD), IsDlgButtonChecked(hDlg, IDC_SKFB_PRIVATE));
                 break;
             }
             case ID_SKFB_PUBLISH:
             {
                 gOK = 1;
-                ExportFileData lepd;
-                lepd = epd;
-                // Copy data settings from UI to export options
-                GetDlgItemTextA(hDlg, IDC_WORLD_MIN_X, lepd.minxString, EP_FIELD_LENGTH);
-                GetDlgItemTextA(hDlg, IDC_WORLD_MIN_Y, lepd.minyString, EP_FIELD_LENGTH);
-                GetDlgItemTextA(hDlg, IDC_WORLD_MIN_Z, lepd.minzString, EP_FIELD_LENGTH);
-                GetDlgItemTextA(hDlg, IDC_WORLD_MAX_X, lepd.maxxString, EP_FIELD_LENGTH);
-                GetDlgItemTextA(hDlg, IDC_WORLD_MAX_Y, lepd.maxyString, EP_FIELD_LENGTH);
-                GetDlgItemTextA(hDlg, IDC_WORLD_MAX_Z, lepd.maxzString, EP_FIELD_LENGTH);
+                PublishSkfbData lepd;
+                lepd = skfbPbdata;
 
                 // Get SKFB specific data
-                GetDlgItemTextA(hDlg, IDC_API_TOKEN, lepd.skfbApiToken, 33);
-                GetDlgItemTextA(hDlg, IDC_SKFB_NAME, lepd.skfbName, 65);
-                GetDlgItemTextA(hDlg, IDC_SKFB_DESC, lepd.skfbDescription, 1025);
-                GetDlgItemTextA(hDlg, IDC_SKFB_TAG, lepd.skfbTags, 65);
-                lepd.skfbDraft = (IsDlgButtonChecked(hDlg, IDC_SKFB_DRAFT) == 1);
+                GetDlgItemTextA(hDlg, IDC_SKFB_API_TOKEN, lepd.skfbApiToken, SKFB_TOKEN_LIMIT + 1);
+                GetDlgItemTextA(hDlg, IDC_SKFB_NAME, lepd.skfbName, SKFB_NAME_LIMIT + 1);
+                GetDlgItemTextA(hDlg, IDC_SKFB_DESC, lepd.skfbDescription, SKFB_DESC_LIMIT + 1);
+                GetDlgItemTextA(hDlg, IDC_SKFB_TAG, lepd.skfbTags, SKFB_TAG_LIMIT + 1);
+                lepd.skfbDraft = (IsDlgButtonChecked(hDlg, IDC_SKFB_DRAFT) == 0);
                 lepd.skfbPrivate = (IsDlgButtonChecked(hDlg, IDC_SKFB_PRIVATE) == 1);
                 if (lepd.skfbPrivate){
                     GetDlgItemTextA(hDlg, IDC_SKFB_PASSWORDFIELD, lepd.skfbPassword, 25);
                 }
 
-                // Check inputs
-                int nc;
-                nc = sscanf_s(lepd.minxString, "%d", &lepd.minxVal);
-                nc &= sscanf_s(lepd.minyString, "%d", &lepd.minyVal);
-                nc &= sscanf_s(lepd.minzString, "%d", &lepd.minzVal);
-                nc &= sscanf_s(lepd.maxxString, "%d", &lepd.maxxVal);
-                nc &= sscanf_s(lepd.maxyString, "%d", &lepd.maxyVal);
-                nc &= sscanf_s(lepd.maxzString, "%d", &lepd.maxzVal);
-
-                char toto[50];
-                GetDlgItemTextA(hDlg, IDC_SKFB_NAME, toto, 50);
-                std::string stoto(toto);
-                if (stoto.size() == 0)
-                {
-                    MessageBox(NULL,
-                        _T("Please enter a name for your model"), _T("Name error"), MB_OK | MB_ICONERROR);
-                    return (INT_PTR)FALSE;
-                }
-
-                char desc[1026];
-                GetDlgItemTextA(hDlg, IDC_SKFB_DESC, desc, 1026);
-                std::string sdesc(desc);
-                if (sdesc.size() > 1024)
-                {
-                    MessageBox(NULL,
-                        _T("The model description is too long"), _T("Description error"), MB_OK | MB_ICONERROR);
-                    return (INT_PTR)FALSE;
-                }
-                if ( nc == 0 )
-                {
-                    MessageBox(NULL,
-                        _T("Bad (non-numeric) value detected in options dialog;\nYou need to clean up, then hit OK again."), _T("Non-numeric value error"), MB_OK|MB_ICONERROR);
-                    return (INT_PTR)FALSE;
-                }
                 // survived tests, so really use data
-                epd = lepd;
+                skfbPbdata = lepd;
             } // yes, we do want to fall through here
             case IDCANCEL:
                 EndDialog(hDlg, LOWORD(wParam));

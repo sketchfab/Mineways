@@ -99,6 +99,7 @@ static int gTargetDepth=MIN_OVERWORLD_DEPTH;								//how far down the depth is 
 static ExportFileData gExportPrintData;
 static ExportFileData gExportViewData;
 static ExportFileData gExportSchematicData;
+static PublishSkfbData gSkfbPData;
 // this one is set to whichever is active for export or import, 3D printing or rendering
 static ExportFileData *gpEFD;
 
@@ -195,6 +196,7 @@ static int publishToSketchfab( HWND hWnd, wchar_t *objFileName, wchar_t *terrain
 static void PopupErrorDialogs( int errCode );
 static const wchar_t *removePath( const wchar_t *src );
 static void initializeExportDialogData();
+static void initializeSKFBData();
 static int importSettings( wchar_t *importFile );
 static int readLineSet( FILE *fh, char lines[HEADER_LINES][120], int maxLine );
 static int readLine( FILE *fh, char *inputString, int stringLength );
@@ -221,6 +223,7 @@ int APIENTRY _tWinMain(HINSTANCE hInstance,
     UNREFERENCED_PARAMETER(lpCmdLine);
 
     initializeExportDialogData();
+    initializeSKFBData();
 
     MSG msg;
     HACCEL hAccelTable;
@@ -335,6 +338,20 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
     return TRUE;
 }
 
+
+wchar_t* stripWorldName(wchar_t* worldPath)
+{
+    // find last "/" or "\", as possible
+    wchar_t *lastSplitBackslash = wcsrchr( worldPath, '\\' )+1;
+    wchar_t *lastSplitSlash = wcsrchr( worldPath, '/' )+1;
+    wchar_t *lastSplit = worldPath;
+    if ( lastSplitBackslash > lastSplit )
+    lastSplit = lastSplitBackslash;
+    if ( lastSplitSlash > lastSplit )
+    lastSplit = lastSplitSlash;
+
+    return lastSplit;
+}
 //
 //  FUNCTION: WndProc(HWND, UINT, WPARAM, LPARAM)
 //
@@ -1160,6 +1177,8 @@ RButtonUp:
 
                 return 0;
             }
+
+			sprintf_s(gSkfbPData.skfbName, "%ws", stripWorldName(gWorld));
             // because gSameWorld gets set to 1 by loadWorld()
             if (!gHoldSameWorld)
             {
@@ -2487,6 +2506,7 @@ int publishToSketchfab( HWND hWnd, wchar_t *objFileName, wchar_t *terrainFileNam
     int on;
     int retCode = 0;
 
+    PublishSkfbData* skfbPData = &gSkfbPData;
     // set 'export for rendering' settings
     gpEFD = &gExportViewData;
     gOptions.exportFlags = 0x0;
@@ -2504,8 +2524,8 @@ int publishToSketchfab( HWND hWnd, wchar_t *objFileName, wchar_t *terrainFileNam
     // Probably not mandatory
     /*    gpEFD->chkBiome = ( gOptions.worldType & BIOMES ) ? TRUE : FALSE;*/
 
-    // set epd in PublishSkfb data
-    setPublishSkfbData(gpEFD);
+    // set epd in skfbPDdata data
+    setPublishSkfbData(skfbPData);
 
     // Open dialog and get user data
     if ( !doPublishSkfb(hInst,hWnd) )
@@ -2514,7 +2534,7 @@ int publishToSketchfab( HWND hWnd, wchar_t *objFileName, wchar_t *terrainFileNam
         return 0;
     }
     // Get updated version of export data (api token, etc)
-    getPublishSkfbData(gpEFD);
+    getPublishSkfbData(skfbPData);
     // Do not copy settings between export options
     /*    copyOverExportPrintData(gpEFD);*/
 
@@ -2611,8 +2631,11 @@ int publishToSketchfab( HWND hWnd, wchar_t *objFileName, wchar_t *terrainFileNam
         {
             PopupErrorDialogs( errCode );
         }
-
-        uploadToSketchfab(wcZip, progressBar, gpEFD->skfbApiToken, gpEFD->skfbName, gpEFD->skfbDescription, gpEFD->skfbTags, gpEFD->skfbDraft, gpEFD->skfbPrivate, gpEFD->skfbPassword);
+        std::wstring file(wcZip);
+        std::string filepath(file.begin(), file.end());
+        skfbPData->skfbFilePath = filepath;
+		setPublishSkfbData(skfbPData);
+        uploadToSketchfab(hInst, hWnd);
     }
 
     return retCode;
@@ -3168,6 +3191,14 @@ static void initializeExportDialogData()
     // TODO someday allow getting rid of floaters, that would be cool.
     //gExportSchematicData.chkDeleteFloaters = 1;
 }
+
+static void initializeSKFBData()
+{
+    // by default, make everything 0 - off
+	memset(&gSkfbPData, 0, sizeof(PublishSkfbData));
+	gSkfbPData.skfbDraft = true;
+}
+
 
 // Message handler for about box.
 INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
@@ -3835,15 +3866,7 @@ static void formTitle(wchar_t *world, wchar_t *title)
     }
     else
     {
-        // find last "/" or "\", as possible
-        wchar_t *lastSplitBackslash = wcsrchr( world, '\\' )+1;
-        wchar_t *lastSplitSlash = wcsrchr( world, '/' )+1;
-        wchar_t *lastSplit = world;
-        if ( lastSplitBackslash > lastSplit )
-            lastSplit = lastSplitBackslash;
-        if ( lastSplitSlash > lastSplit )
-            lastSplit = lastSplitSlash;
-        wcscat_s( title, MAX_PATH-1, lastSplit );
+       wcscat_s( title, MAX_PATH-1, stripWorldName(world) );
     }
 }
 
