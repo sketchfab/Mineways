@@ -30,6 +30,7 @@ THE POSSIBILITY OF SUCH DAMAGE.
 #include "Mineways.h"
 #include "ColorSchemes.h"
 #include "ExportPrint.h"
+#include "publishSkfb.h"
 #include "XZip.h"
 #include "lodepng.h"
 #include <assert.h>
@@ -98,6 +99,7 @@ static int gTargetDepth=MIN_OVERWORLD_DEPTH;								//how far down the depth is 
 static ExportFileData gExportPrintData;
 static ExportFileData gExportViewData;
 static ExportFileData gExportSchematicData;
+static PublishSkfbData gSkfbPData;
 // this one is set to whichever is active for export or import, 3D printing or rendering
 static ExportFileData *gpEFD;
 
@@ -190,6 +192,7 @@ static void setSlider( HWND hWnd, HWND hwndSlider, HWND hwndLabel, int depth );
 static void syncCurrentHighlightDepth();
 static void copyOverExportPrintData( ExportFileData *pEFD );
 static int saveObjFile( HWND hWnd, wchar_t *objFileName, int printModel, wchar_t *terrainFileName, BOOL showDialog );
+static int publishToSketchfab( HWND hWnd, wchar_t *objFileName, wchar_t *terrainFileName);
 static void PopupErrorDialogs( int errCode );
 static const wchar_t *removePath( const wchar_t *src );
 static void initializeExportDialogData();
@@ -219,6 +222,8 @@ int APIENTRY _tWinMain(HINSTANCE hInstance,
     UNREFERENCED_PARAMETER(lpCmdLine);
 
     initializeExportDialogData();
+    // Initialize Skfb data
+    memset(&gSkfbPData, 0, sizeof(PublishSkfbData));
 
     MSG msg;
     HACCEL hAccelTable;
@@ -333,6 +338,20 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
     return TRUE;
 }
 
+
+wchar_t* stripWorldName(wchar_t* worldPath)
+{
+    // find last "/" or "\", as possible
+    wchar_t *lastSplitBackslash = wcsrchr( worldPath, '\\' )+1;
+    wchar_t *lastSplitSlash = wcsrchr( worldPath, '/' )+1;
+    wchar_t *lastSplit = worldPath;
+    if ( lastSplitBackslash > lastSplit )
+        lastSplit = lastSplitBackslash;
+    if ( lastSplitSlash > lastSplit )
+        lastSplit = lastSplitSlash;
+
+    return lastSplit;
+}
 //
 //  FUNCTION: WndProc(HWND, UINT, WPARAM, LPARAM)
 //
@@ -1158,6 +1177,8 @@ RButtonUp:
 
                 return 0;
             }
+
+            sprintf_s(gSkfbPData.skfbName, "%ws", stripWorldName(gWorld));
             // because gSameWorld gets set to 1 by loadWorld()
             if (!gHoldSameWorld)
             {
@@ -1477,6 +1498,24 @@ InitEnable:
                 setSlider( hWnd, hwndBottomSlider, hwndBottomLabel, gTargetDepth );
                 }
             }
+            break;
+        case IDM_FILE_PUBLISHSKFB:
+            // Force it to be an rendering export: Relative obj
+            gPrintModel=0;
+            gExportViewData.fileType=FILE_TYPE_WAVEFRONT_REL_OBJ;
+            ZeroMemory(&ofn,sizeof(OPENFILENAME));
+            ofn.lStructSize=sizeof(OPENFILENAME);
+            ofn.hwndOwner=hWnd;
+            ofn.lpstrFile=gExportPath;
+            ofn.nMaxFile=MAX_PATH;
+
+            ofn.nFilterIndex=gExportViewData.fileType+1;
+            ofn.lpstrFileTitle=NULL;
+            ofn.nMaxFileTitle=0;
+            ofn.lpstrInitialDir=NULL;
+            ofn.Flags=OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+
+            publishToSketchfab(hWnd,L"Mineways2Skfb",gSelectTerrain);
             break;
         case IDM_JUMPSPAWN:
             gCurX=gSpawnX;
@@ -2325,6 +2364,7 @@ static void validateItems(HMENU menu)
         EnableMenuItem(menu,IDM_FILE_SAVEOBJ,MF_ENABLED);
         EnableMenuItem(menu,IDM_FILE_PRINTOBJ,MF_ENABLED);
         EnableMenuItem(menu,IDM_FILE_SCHEMATIC,MF_ENABLED);
+        EnableMenuItem(menu,IDM_FILE_PUBLISHSKFB,MF_ENABLED);
     }
     else
     {
@@ -2335,6 +2375,7 @@ static void validateItems(HMENU menu)
         EnableMenuItem(menu,IDM_FILE_PRINTOBJ,MF_DISABLED);
         EnableMenuItem(menu,IDM_FILE_SCHEMATIC,MF_DISABLED);
         EnableMenuItem(menu,IDM_VIEW_JUMPTOMODEL,MF_DISABLED);
+        EnableMenuItem(menu,IDM_FILE_PUBLISHSKFB,MF_DISABLED);
     }
     // has a save been done?
     if (gExported)
@@ -2458,6 +2499,134 @@ static void copyOverExportPrintData( ExportFileData *pEFD )
         if ( service == 0 )
             pEFD->comboModelUnits[dest[i]] = pEFD->comboModelUnits[source];
     }
+}
+
+int publishToSketchfab( HWND hWnd, wchar_t *objFileName, wchar_t *terrainFileName )
+{
+    int on;
+    int retCode = 0;
+
+    PublishSkfbData* skfbPData = &gSkfbPData;
+    // set 'export for rendering' settings
+    gpEFD = &gExportViewData;
+    gOptions.exportFlags = 0x0;
+    gpEFD->flags = 0x0;
+
+    gOptions.pEFD = gpEFD;
+
+    // get selected zone bounds
+    GetHighlightState(&on, &gpEFD->minxVal, &gpEFD->minyVal, &gpEFD->minzVal, &gpEFD->maxxVal, &gpEFD->maxyVal, &gpEFD->maxzVal );
+
+    int miny = gpEFD->minyVal;
+    int maxy = gpEFD->maxyVal;
+
+    // set epd in skfbPDdata data
+    setPublishSkfbData(skfbPData);
+
+    // Open dialog and get user data
+    if ( !doPublishSkfb(hInst,hWnd) )
+    {
+        return 0;
+    }
+    // Get updated version of export data (api token, etc)
+    getPublishSkfbData(skfbPData);
+
+    // if user changed depths
+    if ( miny != gpEFD->minyVal || maxy != gpEFD->maxyVal )
+    {
+        // see if target did not change
+        if ( gTargetDepth <= gCurDepth )
+        {
+            gTargetDepth = gpEFD->minyVal;
+            gCurDepth = gpEFD->maxyVal;
+        }
+        else
+        {
+            gTargetDepth = gpEFD->maxyVal;
+            gCurDepth = gpEFD->minyVal;
+        }
+    }
+
+    // get zone bounds
+    SetHighlightState(on, gpEFD->minxVal, gpEFD->minyVal, gpEFD->minzVal, gpEFD->maxxVal, gpEFD->maxyVal, gpEFD->maxzVal );
+
+    // export all ellements for Skfb
+    gOptions.saveFilterFlags = BLF_WHOLE | BLF_ALMOST_WHOLE | BLF_STAIRS | BLF_HALF | BLF_MIDDLER | BLF_BILLBOARD | BLF_PANE | BLF_FLATTOP |
+        BLF_FLATSIDE | BLF_3D_BIT;
+
+    // Set options for Sketchfab publication. Need to determine best settings here, the user will not have the choice
+    gOptions.exportFlags |= EXPT_OUTPUT_MATERIALS | EXPT_OUTPUT_TEXTURE_IMAGES | EXPT_GROUP_BY_MATERIAL;
+
+    gOptions.exportFlags |=
+        (gpEFD->chkHollow[gpEFD->fileType] ? EXPT_HOLLOW_BOTTOM : 0x0) |
+        ((gpEFD->chkHollow[gpEFD->fileType] && gpEFD->chkSuperHollow[gpEFD->fileType]) ? EXPT_HOLLOW_BOTTOM|EXPT_SUPER_HOLLOW_BOTTOM : 0x0);
+
+    gOptions.exportFlags |= EXPT_OUTPUT_OBJ_GROUPS; // export groups
+    gOptions.exportFlags |= EXPT_OUTPUT_OBJ_MATERIAL_PER_TYPE; // the norm, instead of single material
+    gOptions.exportFlags |= EXPT_OUTPUT_OBJ_FULL_MATERIAL; // Full material (output the extra values)
+    gOptions.exportFlags |= EXPT_OUTPUT_TEXTURE_IMAGES; // Export block full texture
+    gOptions.exportFlags |= EXPT_OUTPUT_OBJ_REL_COORDINATES; // OBj relative coordinates
+    gOptions.exportFlags |= EXPT_BIOME; // Use biome for export. Currently only the biome at the center of the zone is supported
+
+    // Generate files
+    FileList outputFileList;
+    outputFileList.count = 0;
+    if ( on ) {
+
+        draw();
+        InvalidateRect(hWnd, NULL, FALSE);
+        UpdateWindow(hWnd);
+        gpEFD->radioScaleToHeight = 1;
+        gpEFD->radioScaleByCost = 0;
+
+        int errCode = SaveVolume(objFileName, gpEFD->fileType, &gOptions, gWorld, gCurrentDirectory,
+            gpEFD->minxVal, gpEFD->minyVal, gpEFD->minzVal, gpEFD->maxxVal, gpEFD->maxyVal, gpEFD->maxzVal,
+            updateProgress, terrainFileName, &outputFileList, (int)gMajorVersion, (int)gMinorVersion);
+
+        wchar_t wcZip[MAX_PATH];
+        LPTSTR tempdir = new TCHAR[MAX_PATH];
+
+        // Write zip in temp directory
+        GetTempPath(MAX_PATH, tempdir);
+        swprintf_s(wcZip, MAX_PATH, L"%s\\%s.zip", tempdir, outputFileList.name[0]);
+        DeleteFile(wcZip);
+
+        HZIP hz = CreateZip(wcZip,0,ZIP_FILENAME);
+        for ( int i = 0; i < outputFileList.count; i++ )
+        {
+            const wchar_t *nameOnly = removePath( outputFileList.name[i] ) ;
+
+            if (*updateProgress)
+            { (*updateProgress)(0.90f + 0.10f*(float)i/(float)outputFileList.count);}
+
+            ZipAdd(hz,nameOnly, outputFileList.name[i], 0, ZIP_FILENAME);
+
+            // delete model files if not needed
+            if ( !gpEFD->chkCreateModelFiles[gpEFD->fileType] )
+            {
+                DeleteFile(outputFileList.name[i]);
+            }
+        }
+        CloseZip(hz);
+
+        if (*updateProgress)
+            (*updateProgress)(1.0f);
+
+        if ( errCode != MW_NO_ERROR )
+        {
+            PopupErrorDialogs( errCode );
+        }
+
+        // Set filepath to skfb data
+        std::wstring file(wcZip);
+        std::string filepath(file.begin(), file.end());
+        skfbPData->skfbFilePath = filepath;
+        setPublishSkfbData(skfbPData);
+
+        uploadToSketchfab(hInst, hWnd);
+    }
+
+    return retCode;
 }
 
 // returns number of files written on successful export, 0 files otherwise.
@@ -3010,6 +3179,7 @@ static void initializeExportDialogData()
     // TODO someday allow getting rid of floaters, that would be cool.
     //gExportSchematicData.chkDeleteFloaters = 1;
 }
+
 
 // Message handler for about box.
 INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
@@ -3677,15 +3847,7 @@ static void formTitle(wchar_t *world, wchar_t *title)
     }
     else
     {
-        // find last "/" or "\", as possible
-        wchar_t *lastSplitBackslash = wcsrchr( world, '\\' )+1;
-        wchar_t *lastSplitSlash = wcsrchr( world, '/' )+1;
-        wchar_t *lastSplit = world;
-        if ( lastSplitBackslash > lastSplit )
-            lastSplit = lastSplitBackslash;
-        if ( lastSplitSlash > lastSplit )
-            lastSplit = lastSplitSlash;
-        wcscat_s( title, MAX_PATH-1, lastSplit );
+       wcscat_s( title, MAX_PATH-1, stripWorldName(world) );
     }
 }
 
