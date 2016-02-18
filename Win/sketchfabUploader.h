@@ -3,16 +3,14 @@
 #include "curl/curl.h"
 #include "Resource.h"
 
-#define SKETCHFAB_SERVER "https://sketchfab.com"
+#define SKETCHFAB_SERVER "https://sketchfab-local.com"
 #define SKETCHFAB_MODELS SKETCHFAB_SERVER "/models"
 #define SKETCHFAB_MODELS_API SKETCHFAB_SERVER "/v2/models"
-#define MINIMAL_PROGRESS_FUNCTIONALITY_INTERVAL     1
 
 typedef std::map<std::string, std::string> attributes;
-curl_off_t hu = -1;
+curl_off_t firstStep = -1;
 
 struct ProgressbarUpdater {
-  double lastruntime;
   CURL *curl;
   HWND progressBar;
 };
@@ -22,10 +20,12 @@ static int progress_callback(void *clientp,
   curl_off_t dltotal, curl_off_t dlnow,
   curl_off_t ultotal, curl_off_t ulnow)
 {
-  if(hu == -1 && ulnow > 1000)
-  {
-     hu = ulnow;
-  }
+
+  UNREFERENCED_PARAMETER(dltotal);
+  UNREFERENCED_PARAMETER(dlnow);
+  // Hack to smooth the progress bar
+  if(firstStep == -1 && ulnow > 1000)
+     firstStep = ulnow;
 
   struct ProgressbarUpdater *myp = (struct ProgressbarUpdater *)clientp;
   double curtime = 0;
@@ -33,12 +33,12 @@ static int progress_callback(void *clientp,
   curl_easy_getinfo(myp->curl, CURLINFO_TOTAL_TIME, &curtime);
 
   curl_off_t total_percen = 0;
-  /* Get the percentage of data transferred so far */
   if(ultotal > CURL_OFF_T_C(1)) {
-    total_percen = (ulnow - hu) / ((ultotal - hu)/ CURL_OFF_T_C(100));
+    total_percen = (ulnow - firstStep) / ((ultotal - firstStep)/ CURL_OFF_T_C(100));
     total_percen = (total_percen - 50) * 2;
   }
-  SendMessage(myp->progressBar, PBM_SETPOS, total_percen, 0);
+
+  SendMessage(myp->progressBar, PBM_SETPOS, (WPARAM)float(total_percen), 0);
 
   return 0;
 };
@@ -48,131 +48,127 @@ static size_t WriteMemoryCallback(char *contents, size_t size, size_t nmemb, voi
   return size * nmemb;
 }
 
-INT_PTR CALLBACK manageUploadWindow(HWND hDlg,UINT message,WPARAM wParam,LPARAM lParam);
-
-
 class SketchfabV2Uploader {
 public:
-  SketchfabV2Uploader()
-  {}
-  ~SketchfabV2Uploader()
-  {
-    if(_curl)
-      curl_easy_cleanup(_curl);
-  }
+    SketchfabV2Uploader()
+    {}
+    ~SketchfabV2Uploader()
+    {}
 
-
-
-	std::pair<bool, std::string> upload(
-    HWND progressBar,
-    const std::string& token,
-    const std::string& filepath,
-		const std::string& name = std::string(),
-		const std::string& description = std::string(),
-		const std::string& tags = std::string(),
-		const bool draft = false,
-		const bool setPrivate = false,
-		const std::string& password = std::string()) {
-		std::string modelid;
-		std::map<std::string, std::string> parameters, files;
-    HWND pprogressBar = GetDlgItem(progressBar, IDC_SKFB_UPLOAD_PROGRESS);
-		parameters["token"] = token; // "90f3e91f233248c78603af99a3abab26";//
-		parameters["isPublished"] = (draft? "0" : "1");
-		parameters["private"] = (setPrivate ? "1" : "0");
-		parameters["password"] = password;
-		parameters["name"] = name;
-		parameters["tags"] = std::string("mineways ") + tags;
-		parameters["description"] = description;
-		parameters["source"] = "mineways";
-		files["modelFile"] = filepath;
-		std::pair<int, std::string> response = post(SKETCHFAB_MODELS_API, files, parameters, pprogressBar);
-
-    // Upload v2 returns a status 201 not 200
-    bool success=false;
-    if (response.first == 201)
+    std::pair<bool, std::string> upload(HWND progressBar,
+                                        const std::string& token,
+                                        const std::string& filepath,
+                                        const std::string& name = std::string(),
+                                        const std::string& description = std::string(),
+                                        const std::string& tags = std::string(),
+                                        const bool draft = false,
+                                        const bool setPrivate = false,
+                                        const std::string& password = std::string())
     {
-      success=true;
-    }
-    std::string value((success ? get_json_key(response.second, "uid") : get_json_key(response.second, "detail")));
+        std::string modelid;
+        std::map<std::string, std::string> parameters, files;
+        HWND pprogressBar = GetDlgItem(progressBar, IDC_SKFB_UPLOAD_PROGRESS);
 
-    return std::pair<bool, std::string>(success, value);
-	}
+        // Settings request parameters
+        parameters["token"] = token;
+        parameters["isPublished"] = (draft? "0" : "1");
+        parameters["private"] = (setPrivate ? "1" : "0");
+        parameters["password"] = password;
+        parameters["name"] = name;
+        parameters["tags"] = std::string("mineways ") + tags;
+        parameters["description"] = description;
+        parameters["source"] = "mineways";
+        files["modelFile"] = filepath;
 
+        std::pair<int, std::string> response = post(SKETCHFAB_MODELS_API, files, parameters, pprogressBar);
 
-	  std::pair<int, std::string> post(const std::string& url,
-    const attributes& files = attributes(),
-    const attributes& parameters = attributes(),
-    HWND progressBar=NULL) {
-    CURL *curl;
-    struct ProgressbarUpdater prog;
-    CURLcode res;
-    long http_code;
-    std::string response;
-    struct curl_httppost *formpost = NULL;
-    struct curl_httppost *lastptr = NULL;
+        // Upload v2 returns a status 201 not 200
+        bool success=false;
+        if (response.first == 201)
+          success=true;
 
-    http_code = 0;
+        std::string value((success ? model_url(get_json_key(response.second, "uid")) : get_json_key(response.second, "detail")));
 
-    if (url.empty()) {
-      std::cout << "Missing url parameter in post parameters" << std::endl;
-      return std::pair<int, std::string>(-1, std::string());
-    }
-    if (files.empty()) {
-      std::cout << "Missing files in post parameters" << std::endl;
-      return std::pair<int, std::string>(-2, std::string());
+        return std::pair<bool, std::string>(success, value);
     }
 
-    for (attributes::const_iterator file = files.begin(); file != files.end(); ++file) {
-      std::cout << file->first.c_str();
-      curl_formadd(&formpost,
-        &lastptr,
-        CURLFORM_COPYNAME, file->first.c_str(),
-        CURLFORM_FILE, file->second.c_str(),
-        CURLFORM_END);
-    }
 
-    for (attributes::const_iterator parameter = parameters.begin(); parameter != parameters.end(); ++parameter) {
-      if (!parameter->second.empty()) {
-        curl_formadd(&formpost,
-          &lastptr,
-          CURLFORM_COPYNAME, parameter->first.c_str(),
-          CURLFORM_COPYCONTENTS, parameter->second.c_str(),
-          CURLFORM_END);
-      }
-    }
+    std::pair<int, std::string> post(const std::string& url,
+                                     const attributes& files = attributes(),
+                                     const attributes& parameters = attributes(),
+                                     HWND progressBar=NULL)
+    {
+        CURL *curl;
+        struct ProgressbarUpdater prog;
+        CURLcode res;
+        long http_code;
+        std::string response;
+        struct curl_httppost *formpost = NULL;
+        struct curl_httppost *lastptr = NULL;
+        http_code = 0;
 
+        if (url.empty()) {
+            std::cout << "Missing url parameter in post parameters" << std::endl;
+            return std::pair<int, std::string>(-1, std::string());
+        }
+        if (files.empty()) {
+            std::cout << "Missing files in post parameters" << std::endl;
+            return std::pair<int, std::string>(-2, std::string());
+        }
+
+        for (attributes::const_iterator file = files.begin(); file != files.end(); ++file) {
+            std::cout << file->first.c_str();
+			curl_formadd(&formpost,
+				         &lastptr,
+				         CURLFORM_COPYNAME, file->first.c_str(),
+				         CURLFORM_FILE, file->second.c_str(),
+				         CURLFORM_END);
+        }
+
+        for (attributes::const_iterator parameter = parameters.begin(); parameter != parameters.end(); ++parameter) {
+              if (!parameter->second.empty()) {
+                curl_formadd(&formpost,
+                             &lastptr,
+                             CURLFORM_COPYNAME, parameter->first.c_str(),
+                             CURLFORM_COPYCONTENTS, parameter->second.c_str(),
+                             CURLFORM_END);
+              }
+        }
+
+    // Setting curl
     curl = curl_easy_init();
 
     if (curl) {
-      prog.lastruntime = 0;
-      prog.curl = curl;
-    prog.progressBar = progressBar;
+        prog.curl = curl;
+        prog.progressBar = progressBar;
 
-      curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);
-      curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
-      curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-      curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-      curl_easy_setopt(curl, CURLOPT_HTTPPOST, formpost);
-      curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0);
-      curl_easy_setopt(curl, CURLOPT_PROGRESSDATA, &prog);
-      curl_easy_setopt(curl, CURLOPT_PROGRESSFUNCTION, progress_callback);
-      res = curl_easy_perform(curl);
-      if (res != CURLE_OK) {
-        std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
-        std::cerr << "Model upload returned http code: " << http_code << std::endl;
-      }
-      else {
-        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-      }
-      SendMessage(progressBar, PBM_SETPOS,100, 0);
-      curl_easy_cleanup(curl);
-      curl_formfree(formpost);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl, CURLOPT_HTTPPOST, formpost);
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0);
+        curl_easy_setopt(curl, CURLOPT_PROGRESSDATA, &prog);
+        curl_easy_setopt(curl, CURLOPT_PROGRESSFUNCTION, progress_callback);
+        res = curl_easy_perform(curl);
+        if (res != CURLE_OK) {
+            std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
+            std::cerr << "Model upload returned http code: " << http_code << std::endl;
+        }
+        else {
+            curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+        }
+        SendMessage(progressBar, PBM_SETPOS,100, 0);
+        curl_easy_cleanup(curl);
+        curl_formfree(formpost);
     }
-    return std::pair<int, std::string>(http_code, response);
-  }
 
-  std::pair<int, std::string> get(const std::string& url,
-    const attributes& parameters = attributes()) {
+    return std::pair<int, std::string>(http_code, response);
+}
+
+std::pair<int, std::string> get(const std::string& url,
+                                const attributes& parameters = attributes())
+{
     CURL *curl;
     CURLcode res;
     std::string model_url;
@@ -180,103 +176,60 @@ public:
     long http_code;
 
     if (url.empty()) {
-      std::cout << "Missing url parameters in get parameters" << std::endl;
-      return std::pair<int, std::string>(-1, std::string());
+        std::cout << "Missing url parameters in get parameters" << std::endl;
+        return std::pair<int, std::string>(-1, std::string());
     }
 
     std::string options;
     for (attributes::const_iterator parameter = parameters.begin(); parameter != parameters.end(); ++parameter) {
-      if (options.empty()) {
-        options = "?";
-      }
-      else {
-        options += "&";
-      }
-      options += parameter->first + "=" + parameter->second;
+        if (options.empty()) {
+            options = "?";
+        }
+        else {
+            options += "&";
+        }
+        options += parameter->first + "=" + parameter->second;
     }
 
     http_code = 0;
     curl = curl_easy_init();
 
     if (curl) {
-      curl_easy_setopt(curl, CURLOPT_URL, (url + options).c_str());
-      curl_easy_setopt(curl, CURLOPT_FRESH_CONNECT, 1);
-      curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);
-      curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
-      curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+        curl_easy_setopt(curl, CURLOPT_URL, (url + options).c_str());
+        curl_easy_setopt(curl, CURLOPT_FRESH_CONNECT, 1);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
 
-      res = curl_easy_perform(curl);
+        res = curl_easy_perform(curl);
 
-      if (res != CURLE_OK) {
-        std::cerr << "curl_easy_perform failed:" << curl_easy_strerror(res) << std::endl;
-        std::cerr << "Model polling returned http code: " << http_code << std::endl;
-      }
-      else {
-        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-      }
+        if (res != CURLE_OK) {
+            std::cerr << "curl_easy_perform failed:" << curl_easy_strerror(res) << std::endl;
+            std::cerr << "Model polling returned http code: " << http_code << std::endl;
+        }
+        else {
+            curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+        }
 
-      curl_easy_cleanup(curl);
+        curl_easy_cleanup(curl);
     }
 
     return std::pair<int, std::string>(http_code, response);
-  }
+}
 
-	std::string status(const std::string& modelid) {
-	std::pair<int, std::string> response = get(model_status_url(modelid));
-
-		if (response.first == 200) {
-			// 'SUCCEEDED': model correctly processed and viewable at model_url(modelid)
-			// 'FAILED': model processing failed
-			// 'PENDING': model waiting to be processed
-			// 'PROCESSING': model being currently processed
-			return get_json_key(response.second, "processing");
-		}
-		return std::string();
-	}
-
-	std::string poll(const std::string& modelid, unsigned int timeout = 60, unsigned int poll_delay = 1) {
-		bool continue_polling = true;
-		std::string model_status;
-		unsigned int poll_time = 0;
-
-		do {
-			model_status = status(modelid);
-			if (poll_time >= timeout) {
-				continue_polling = false;
-				model_status = "POLL_TIMEOUT";
-			}
-			else if (model_status == "SUCCEEDED" || model_status == "FAILED") {
-				continue_polling = false;
-			}
-			else {
-				poll_time += poll_delay;
-				Sleep(poll_delay);
-			}
-		} while (continue_polling);
-
-		return model_status;
-	}
-
-	std::string model_url(const std::string& modelid) const {
-		return std::string(SKETCHFAB_MODELS) + "/" + modelid;
-	}
-
-	std::string model_status_url(const std::string& modelid) const {
-		return std::string(SKETCHFAB_MODELS_API) + "/" + modelid + "/status?token=";
-	}
+std::string model_url(const std::string& modelid) const {
+    return std::string(SKETCHFAB_MODELS) + "/" + modelid;
+}
 
 protected:
-	std::string get_json_key(const std::string& json, const std::string& key) const {
-		picojson::value v;
-		std::string err = picojson::parse(v, json);
+    std::string get_json_key(const std::string& json, const std::string& key) const {
+        picojson::value v;
+        std::string err = picojson::parse(v, json);
 
-		if (v.is<picojson::object>()) {
-			picojson::object obj = v.get<picojson::object>();
-			return obj[key].to_str();
-		}
-		return std::string();
-	}
-
-private:
-  CURL* _curl; // The main curl handler
+        if (v.is<picojson::object>()) {
+            picojson::object obj = v.get<picojson::object>();
+            return obj[key].to_str();
+        }
+        return std::string();
+    }
 };

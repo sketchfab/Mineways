@@ -1,7 +1,6 @@
 #ifndef CURL_WRAPPER
 #define CURL_WRAPPER
 
-#include "curl/curl.h"
 #include "stdafx.h"
 
 

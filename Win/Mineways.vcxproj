@@ -95,7 +95,7 @@
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
-      <TreatWarningAsError>false</TreatWarningAsError>
+      <TreatWarningAsError>true</TreatWarningAsError>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -206,7 +206,6 @@
     <ClCompile Include="MinewaysMap.cpp" />
     <ClCompile Include="nbt.cpp" />
     <ClCompile Include="ObjFileManip.cpp" />
-    <ClCompile Include="publishSkfb.cpp" />
     <ClCompile Include="region.cpp" />
     <ClCompile Include="rwpng.cpp" />
     <ClCompile Include="stdafx.cpp">
