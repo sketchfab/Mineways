@@ -32,11 +32,14 @@ THE POSSIBILITY OF SUCH DAMAGE.
 #include <sstream>
 #include <Windowsx.h>
 
+// Sketchfab API field limits
 #define SKFB_NAME_LIMIT         48
 #define SKFB_DESC_LIMIT         1024
 #define SKFB_TAG_LIMIT          39   // 48 but "mineways " is automatically added so - 9
 #define SKFB_TOKEN_LIMIT        32
 #define SKFB_PASSWORD_LIMIT     64
+
+HANDLE uploadThreadHandle = NULL;
 
 PublishSkfb::PublishSkfb(void)
 {
@@ -45,6 +48,7 @@ PublishSkfb::PublishSkfb(void)
 
 PublishSkfb::~PublishSkfb(void)
 {
+
 }
 
 
@@ -52,6 +56,7 @@ void getPublishSkfbData(PublishSkfbData *pSkfbpd)
 {
     *pSkfbpd = skfbPbdata;
 }
+
 
 void setPublishSkfbData(PublishSkfbData *pSkfbpd)
 {
@@ -65,6 +70,7 @@ DWORD WINAPI thread_func(LPVOID lpParameter)
     SendMessage(uploadWindow, SIGNAL_UPLOAD_FINISHED, 100, 0);
     return 0;
 }
+
 
 int uploadToSketchfab(HINSTANCE hInst,HWND hWnd)
 {
@@ -83,10 +89,10 @@ int doPublishSkfb(HINSTANCE hInst,HWND hWnd)
     // did we hit cancel?
     return gOK;
 }
+
 INT_PTR CALLBACK manageUploadWindow(HWND hDlg,UINT message,WPARAM wParam,LPARAM lParam)
 {
     UNREFERENCED_PARAMETER(lParam);
-    HANDLE uploadThreadHandle = NULL;
 	uploadWindow = hDlg;
 
     static int focus = -1;
@@ -107,24 +113,23 @@ INT_PTR CALLBACK manageUploadWindow(HWND hDlg,UINT message,WPARAM wParam,LPARAM 
                                     MB_OKCANCEL | MB_ICONINFORMATION);
             if(retcode == IDOK)
             {
-                std::string pp = ("http://sketchfab-local.com/models/" + lastResponse.second);
-                wchar_t* wString = new wchar_t[4096];
-                MultiByteToWideChar(CP_ACP, 0, pp.c_str(), pp.size() + 1, wString, 4096);
-                ShellExecute(NULL, L"open", wString, NULL, NULL, SW_SHOWNORMAL);
+                std::string modelUrl = ("http://sketchfab-local.com/models/" + lastResponse.second);
+                wchar_t* wcharModelUrl = new wchar_t[4096];
+                MultiByteToWideChar(CP_ACP, 0, modelUrl.c_str(), modelUrl.size() + 1, wcharModelUrl, 4096);
+                ShellExecute(NULL, L"open", wcharModelUrl, NULL, NULL, SW_SHOWNORMAL);
             }
         }
         else { // Upload failed
-            std::vector<wchar_t> buf(MultiByteToWideChar(CP_ACP, 0, lastResponse.second.c_str(), lastResponse.second.size() + 1, 0, 0));
-            MultiByteToWideChar(CP_ACP, 0, lastResponse.second.c_str(), lastResponse.second.size() + 1, &buf[0], buf.size());
-            std::wstring toto(&buf[0]);
+            std::vector<wchar_t> errorMessage(MultiByteToWideChar(CP_ACP, 0, lastResponse.second.c_str(), lastResponse.second.size() + 1, 0, 0));
+            MultiByteToWideChar(CP_ACP, 0, lastResponse.second.c_str(), lastResponse.second.size() + 1, &errorMessage[0], errorMessage.size());
+            std::wstring errorMessageStr(&errorMessage[0]);
             MessageBox(NULL,
-				       toto.c_str(),
+				       errorMessageStr.c_str(),
                        L"Upload failed",
                        MB_OKCANCEL | MB_ICONERROR);
         }
 
         EndDialog(hDlg, (INT_PTR)TRUE);
-        std::cout << "oo";
         return (INT_PTR)TRUE;
         break;
     }
@@ -137,6 +142,7 @@ INT_PTR CALLBACK manageUploadWindow(HWND hDlg,UINT message,WPARAM wParam,LPARAM 
                 break;
             }
             case IDC_SKFB_UPLOAD_CANCEL:
+                // Terminate thread
                 TerminateThread(uploadThreadHandle, 1);
                 EndDialog(hDlg, (INT_PTR)FALSE);
                 MessageBox(NULL,

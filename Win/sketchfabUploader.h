@@ -3,7 +3,7 @@
 #include "curl/curl.h"
 #include "Resource.h"
 
-#define SKETCHFAB_SERVER "https://sketchfab-local.com"
+#define SKETCHFAB_SERVER "https://sketchfab.com"
 #define SKETCHFAB_MODELS SKETCHFAB_SERVER "/models"
 #define SKETCHFAB_MODELS_API SKETCHFAB_SERVER "/v2/models"
 #define MINIMAL_PROGRESS_FUNCTIONALITY_INTERVAL     1
@@ -28,10 +28,9 @@ static int progress_callback(void *clientp,
   }
 
   struct ProgressbarUpdater *myp = (struct ProgressbarUpdater *)clientp;
-  CURL *curl = myp->curl;
   double curtime = 0;
 
-  curl_easy_getinfo(curl, CURLINFO_TOTAL_TIME, &curtime);
+  curl_easy_getinfo(myp->curl, CURLINFO_TOTAL_TIME, &curtime);
 
   curl_off_t total_percen = 0;
   /* Get the percentage of data transferred so far */
@@ -56,12 +55,12 @@ class SketchfabV2Uploader {
 public:
   SketchfabV2Uploader()
   {}
-	SketchfabV2Uploader(const std::string& token) : _token(token)
-	{}
-  void setToken(const std::string& token)
+  ~SketchfabV2Uploader()
   {
-    _token = token;
+    if(_curl)
+      curl_easy_cleanup(_curl);
   }
+
 
 
 	std::pair<bool, std::string> upload(
@@ -223,7 +222,7 @@ public:
   }
 
 	std::string status(const std::string& modelid) {
-		std::pair<int, std::string> response = get(model_status_url(modelid));
+	std::pair<int, std::string> response = get(model_status_url(modelid));
 
 		if (response.first == 200) {
 			// 'SUCCEEDED': model correctly processed and viewable at model_url(modelid)
@@ -263,7 +262,7 @@ public:
 	}
 
 	std::string model_status_url(const std::string& modelid) const {
-		return std::string(SKETCHFAB_MODELS_API) + "/" + modelid + "/status?token=" + _token;
+		return std::string(SKETCHFAB_MODELS_API) + "/" + modelid + "/status?token=";
 	}
 
 protected:
@@ -279,5 +278,5 @@ protected:
 	}
 
 private:
-	std::string _token;
+  CURL* _curl; // The main curl handler
 };
