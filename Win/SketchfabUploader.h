@@ -148,6 +148,7 @@ public:
         curl_easy_setopt(curl, CURLOPT_PROGRESSFUNCTION, progress_callback);
         res = curl_easy_perform(curl);
         if (res != CURLE_OK) {
+            return std::pair<int, std::string>(1, "{\"detail\":\"curl_easy_perform() failed: " + std::string(curl_easy_strerror(res)) + "\" } ");
             std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
             std::cerr << "Model upload returned http code: " << http_code << std::endl;
         }
