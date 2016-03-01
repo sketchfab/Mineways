@@ -145,6 +145,7 @@ public:
         curl_easy_setopt(curl, CURLOPT_HTTPPOST, formpost);
         curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0);
         curl_easy_setopt(curl, CURLOPT_PROGRESSDATA, &prog);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 900L);
         curl_easy_setopt(curl, CURLOPT_PROGRESSFUNCTION, progress_callback);
         res = curl_easy_perform(curl);
         if (res != CURLE_OK) {
