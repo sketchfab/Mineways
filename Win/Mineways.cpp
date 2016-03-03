@@ -1237,6 +1237,7 @@ RButtonUp:
         case IDM_TEST_WORLD:
             gWorld[0] = 0;
             gSameWorld = 0;
+            sprintf_s(gSkfbPData.skfbName, "TestWorld");
             gotoSurface( hWnd, hwndSlider, hwndLabel);
             loadWorld();
             goto InitEnable;
@@ -2152,8 +2153,18 @@ static int setWorldPath(TCHAR *path)
 
     // try Mac path
     TCHAR newPath[MAX_PATH];
-    wcscpy_s(path, MAX_PATH, L"./Library/Application Support/minecraft/saves");
+    // Workaround for OSX minecraft worlds path
+    // Get the username and check in user's Library directory
+    wchar_t user[1024];
+    DWORD username_len = 1025;
+    GetUserName(user, &username_len);
+    swprintf_s(path, MAX_PATH, L"Z:\\Users\\%s\\Library\\Application Support\\minecraft\\saves", user);
 
+    if ( PathFileExists( path ) )
+        return 1;
+
+    // Back to the old method. Not sure if we should keep this
+    wcscpy_s(path, MAX_PATH, L"./Library/Application Support/minecraft/saves");
     wchar_t msgString[1024];
 
     // keep on trying and trying...
@@ -2593,7 +2604,15 @@ int publishToSketchfab( HWND hWnd, wchar_t *objFileName, wchar_t *terrainFileNam
 
             // Write zip in temp directory
             GetTempPath(MAX_PATH, tempdir);
-            swprintf_s(wcZip, MAX_PATH, L"%s\\%s.zip", tempdir, outputFileList.name[0]);
+
+            // OSX workaround since tempdir will not be ok
+            // TODO: find a better way to detect OSX + Wine vs Windows
+            if ( !PathFileExists(tempdir) )
+            {
+                swprintf_s(tempdir, MAX_PATH, L"\\tmp\\");
+            }
+
+            swprintf_s(wcZip, MAX_PATH, L"%s%s.zip", tempdir, outputFileList.name[0]);
             DeleteFile(wcZip);
 
             HZIP hz = CreateZip(wcZip,0,ZIP_FILENAME);
@@ -2630,6 +2649,8 @@ int publishToSketchfab( HWND hWnd, wchar_t *objFileName, wchar_t *terrainFileNam
         }
 
         uploadToSketchfab(hInst, hWnd);
+        if (*updateProgress)
+            (*updateProgress)(0.0f);
     }
 
     return retCode;
