@@ -2652,6 +2652,13 @@ int publishToSketchfab( HWND hWnd, wchar_t *objFileName, wchar_t *terrainFileNam
         if (*updateProgress)
             (*updateProgress)(0.0f);
     }
+    else
+    {
+        MessageBox(NULL,
+            L"Your selection is empty. Hold down the right mouse button (or left mouse and Control key) and drag to define a selection area",
+            L"Upload failed",
+            MB_OKCANCEL | MB_ICONERROR);
+    }
 
     return retCode;
 }
