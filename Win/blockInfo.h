@@ -31,6 +31,7 @@ THE POSSIBILITY OF SUCH DAMAGE.
 #define __BLOCKINFO_H__
 
 #include <stdlib.h>
+#include <string>
 
 typedef unsigned int    UINT;
 
@@ -219,6 +220,8 @@ extern UnitType gUnitTypeTable[];
 
 // use biomes for export
 #define EXPT_BIOME							0x2000000
+// Sketchfab export (to export only RGBA texture)
+#define EXPT_SKFB							0x4000000
 
 #define EP_FIELD_LENGTH 20
 
@@ -236,6 +239,18 @@ extern UnitType gUnitTypeTable[];
 
 #define FILE_TYPE_TOTAL         7
 
+typedef struct PublishSkfbData
+{
+    // Sketchfab
+    char skfbApiToken[33];
+    char skfbName[49];
+    char skfbDescription[1025];
+    char skfbTags[256];
+    bool skfbPrivate;
+    char skfbPassword[25];
+    bool skfbDraft;
+    std::string skfbFilePath;
+} PublishSkfbData;
 
 typedef struct ExportFileData
 {
@@ -349,11 +364,12 @@ typedef struct Options {
     float block_inch;
 } Options;
 
-
 // number of official Minecraft blocks (take highest valid block ID and add 1)
-#define NUM_BLOCKS_STANDARD 198
+#define NUM_BLOCKS_STANDARD 213
 // number of blocks we want to show on the map (includes the unknown one)
 #define NUM_BLOCKS_MAP (NUM_BLOCKS_STANDARD+1)
+// number of blocks with entries in block info table - now that 255 is used, we need this
+#define NUM_BLOCKS_DEFINED 256
 // Total number of blocks. We used to include 16 wool blocks, but have now deleted these.
 // NUM_BLOCKS_MAP could probably be turned into NUM_BLOCKS at this point, but keeping both for now
 // until the code settles down.
@@ -579,6 +595,7 @@ enum block_types {
     BLOCK_BREWING_STAND = 0x75,
     BLOCK_CAULDRON = 0x76,
     BLOCK_END_PORTAL_FRAME = 0x78,
+    BLOCK_END_STONE = 0x79,
     BLOCK_DRAGON_EGG = 0x7a,
     BLOCK_WOODEN_DOUBLE_SLAB = 0x7d,
     BLOCK_WOODEN_SLAB = 0x7e,
@@ -590,6 +607,7 @@ enum block_types {
     BLOCK_SPRUCE_WOOD_STAIRS = 0x86,
     BLOCK_BIRCH_WOOD_STAIRS = 0x87,
     BLOCK_JUNGLE_WOOD_STAIRS = 0x88,
+    BLOCK_COMMAND_BLOCK = 0x89,
     BLOCK_BEACON = 0x8A,
     BLOCK_COBBLESTONE_WALL = 0x8B,
     BLOCK_FLOWER_POT = 0x8C,
@@ -654,6 +672,23 @@ enum block_types {
     BLOCK_JUNGLE_DOOR = 0xC3,
     BLOCK_ACACIA_DOOR = 0xC4,
     BLOCK_DARK_OAK_DOOR = 0xC5,
+    BLOCK_END_ROD = 0xC6,
+    BLOCK_CHORUS_PLANT = 0xC7,
+    BLOCK_CHORUS_FLOWER = 0xC8,
+    BLOCK_PURPUR_BLOCK = 0xC9,
+    BLOCK_PURPUR_PILLAR = 0xCA,
+    BLOCK_PURPUR_STAIRS = 0xCB,
+    BLOCK_PURPUR_DOUBLE_SLAB = 0xCC,
+    BLOCK_PURPUR_SLAB = 0xCD,
+    BLOCK_END_BRICKS = 0xCE,
+    BLOCK_BEETROOT_SEEDS = 0xCF,
+    BLOCK_GRASS_PATH = 0xD0,
+    BLOCK_END_GATEWAY = 0xD1,
+    BLOCK_REPEATING_COMMAND_BLOCK = 0xD2,
+    BLOCK_CHAIN_COMMAND_BLOCK = 0xD3,
+    BLOCK_FROSTED_ICE = 0xD4,
+
+    BLOCK_STRUCTURE_BLOCK = 0xFF,
 
     BLOCK_UNKNOWN = (NUM_BLOCKS_STANDARD),
 };
