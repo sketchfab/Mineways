@@ -1,15 +1,16 @@
-#Mineways, a Minecraft mapper and exporter.
+# Mineways, a Minecraft mapper and exporter.
 **by Eric Haines, erich@acm.org**
 
 **begun 11/14/2011**
 
 **http://mineways.com**
 
-[Visit the project homepage](http://mineways.com) for documentation links, credits, etc.
+[Visit the project homepage](http://mineways.com) for executables for PC and Mac, documentation links, credits, etc.
 Much of the mapping and UI code is built on the open-source project [Minutor](http://seancode.com/minutor/).
 
 There are different major versions of Mineways. You usually want the latest version; version 1.15 can be used on older worlds.
-* **Version 4.** works on Minecraft 1.2 to 1.8 and beyond, 64-bit for large exports.
+* **Version 5.** works on Minecraft 1.2 to 1.9 and beyond, adds scripting language.
+* **Version 4.** works on Minecraft 1.2 to 1.9-ish and beyond, 64-bit for large exports.
 * **Version 3.** works on Minecraft 1.2 to 1.7 worlds (Anvil, stair geometry changes, and new texturing).
 * **Version 2.x** works on Minecraft 1.2 worlds to 1.4 (Anvil format).
 * **Version 1.x** works on Minecraft 1.1 worlds and earlier (McRegion format).

@@ -27,6 +27,13 @@ THE POSSIBILITY OF SUCH DAMAGE.
 
 
 #pragma once
+// define #include <crtdbg.h> below and this line to test memory leaks, see https://msdn.microsoft.com/en-us/library/x98tx3cf.aspx
+//#define TEST_FOR_MEMORY_LEAKS
+#ifdef TEST_FOR_MEMORY_LEAKS
+#define _CRTDBG_MAP_ALLOC
+#endif
+
+#define SKETCHFAB
 
 // For internet update, sadly does not link under x64:
 // 1>uafxcw.lib(appcore.obj) : error LNK2001: unresolved external symbol __wargv
@@ -50,14 +57,17 @@ THE POSSIBILITY OF SUCH DAMAGE.
 
 // C RunTime Header Files
 #include <stdlib.h>
+// define _CRTDBG_MAP_ALLOC and this next line to test memory leaks, see https://msdn.microsoft.com/en-us/library/x98tx3cf.aspx
+#ifdef TEST_FOR_MEMORY_LEAKS
+#include <crtdbg.h>
+#endif
 #include <malloc.h>
 #include <memory.h>
 #include <tchar.h>
 #include <stdio.h>
-#include <stdlib.h>
 
-#define MINEWAYS_MAJOR_VERSION 4
-#define MINEWAYS_MINOR_VERSION 15
+#define MINEWAYS_MAJOR_VERSION 5
+#define MINEWAYS_MINOR_VERSION 10
 
 #ifndef max
 #define max(a,b)            (((a) > (b)) ? (a) : (b))
@@ -75,11 +85,12 @@ THE POSSIBILITY OF SUCH DAMAGE.
 #define swapint(a,b)	{int tempint = (a); (a)=(b); (b)=tempint;}
 #endif
 
+#define MAX_PATH_AND_FILE (2*MAX_PATH)
 
 #ifdef WIN32
 #define PORTAFILE HANDLE
-#define PortaOpen(fn) CreateFile(fn,GENERIC_READ,FILE_SHARE_READ | FILE_SHARE_WRITE,NULL,OPEN_EXISTING,0,NULL)
-// TODO: should probably check if file exists, etc.?
+#define PortaOpen(fn) CreateFileW(fn,GENERIC_READ,FILE_SHARE_READ | FILE_SHARE_WRITE,NULL,OPEN_EXISTING,0,NULL)
+#define PortaAppend(fn) CreateFileW(fn,GENERIC_READ,FILE_SHARE_READ | FILE_SHARE_WRITE,NULL,CREATE_NEW,0,NULL)
 #define PortaCreate(fn) CreateFileW(fn,GENERIC_WRITE,FILE_SHARE_READ | FILE_SHARE_WRITE,NULL,CREATE_ALWAYS,0,NULL)
 #define PortaSeek(h,ofs) SetFilePointer(h,ofs,NULL,FILE_BEGIN)==INVALID_SET_FILE_POINTER
 #define PortaRead(h,buf,len) !ReadFile(h,buf,len,&br,NULL)
@@ -93,6 +104,7 @@ THE POSSIBILITY OF SUCH DAMAGE.
 #define sprintf_s snprintf
 #define PORTAFILE FILE*
 #define PortaOpen(fn) fopen(fn,"rb")
+#define PortaAppend(fn) fopen(fn,"a")
 #define PortaCreate(fn) fopen(fn,"w")
 #define PortaSeek(h,ofs) fseek(h,ofs,SEEK_SET)
 #define PortaRead(h,buf,len) fread(buf,len,1,h)!=1

@@ -58,7 +58,7 @@ void ColorManager::Init(ColorScheme *cs)
     {
         cs->colors[i]=blockColor(i);
     }
-    for (int i=NUM_BLOCKS; i < 256; i++)
+    for (i=NUM_BLOCKS; i < 256; i++)
     {
         // fill the rest with almost-black; if we detect this color on loading
         // a color scheme in a place that should have been a normal color, then
@@ -508,6 +508,18 @@ INT_PTR CALLBACK ColorSchemeEdit(HWND hDlg,UINT message,WPARAM wParam,LPARAM lPa
                 {
                     curCS.colors[i] &= ~0xff;
                 }
+                HWND lv=GetDlgItem(hDlg,IDC_COLORLIST);
+                ListView_RedrawItems(lv,0,NUM_BLOCKS-1);
+            }
+            break;
+        case IDC_HIDE_TREE_BLOCKS:
+            {
+                // set tree-related blocks zero. Useful for removing trees from large terrain prints (trees are hard to print well).
+                curCS.colors[BLOCK_LOG] &= ~0xff;
+                curCS.colors[BLOCK_AD_LOG] &= ~0xff;
+                curCS.colors[BLOCK_LEAVES] &= ~0xff;
+                curCS.colors[BLOCK_AD_LEAVES] &= ~0xff;
+
                 HWND lv=GetDlgItem(hDlg,IDC_COLORLIST);
                 ListView_RedrawItems(lv,0,NUM_BLOCKS-1);
             }

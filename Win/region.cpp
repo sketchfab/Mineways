@@ -73,15 +73,16 @@ deflated data is the chunk length - 1.
 // block: a 32KB buffer to write block data into
 // blockLight: a 16KB buffer to write block light into (not skylight)
 //
-// returns 1 on success, 0 on error
-int regionGetBlocks(wchar_t *directory, int cx, int cz, unsigned char *block, unsigned char *data, unsigned char *blockLight, unsigned char *biome) 
+// returns 1 on success, 0 on error or nothing found
+int regionGetBlocks(wchar_t *directory, int cx, int cz, unsigned char *block, unsigned char *data, unsigned char *blockLight, unsigned char *biome, BlockEntity *entities, int *numEntities) 
 {
     wchar_t filename[256];
     PORTAFILE regionFile;
 #ifdef WIN32
     DWORD br;
 #endif
-    static unsigned char *buf=NULL,*out=NULL;
+	static unsigned char buf[CHUNK_DEFLATE_MAX];
+	static unsigned char out[CHUNK_INFLATE_MAX];
 
     int sectorNumber, offset, chunkLength;
 
@@ -90,13 +91,6 @@ int regionGetBlocks(wchar_t *directory, int cx, int cz, unsigned char *block, un
 
     static z_stream strm;
     static int strm_initialized = 0;
-
-    if (buf==NULL)
-    {
-        // note that these will never get freed, but we just need this one.
-        buf=(unsigned char*)malloc(CHUNK_DEFLATE_MAX);
-        out=(unsigned char*)malloc(CHUNK_INFLATE_MAX);
-    }
 
     // open the region file - note we get the new mca 1.2 file type here!
     swprintf_s(filename,256,L"%sregion/r.%d.%d.mca",directory,cx>>5,cz>>5);
@@ -164,5 +158,5 @@ int regionGetBlocks(wchar_t *directory, int cx, int cz, unsigned char *block, un
     bf._offset = 0;
     bf.offset = &bf._offset;
 
-    return nbtGetBlocks(bf, block, data, blockLight, biome);
+	return nbtGetBlocks(bf, block, data, blockLight, biome, entities, numEntities);
 }

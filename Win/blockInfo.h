@@ -31,6 +31,7 @@ THE POSSIBILITY OF SUCH DAMAGE.
 #define __BLOCKINFO_H__
 
 #include <stdlib.h>
+#include <string>
 
 typedef unsigned int    UINT;
 
@@ -80,17 +81,20 @@ extern bool gDebug;
 
 // TODO: yes, this is dumb, we have a separate static mtlCostTable for every code file that includes this .h file.
 
-// https://www.shapeways.com/materials - I left out gold and platinum; 14 is about the maximum usable length
+// https://www.shapeways.com/materials - I left out gold and platinum; 14 is about the maximum usable length, after that the dialog scrolls, which is confusing
 #define MTL_COST_TABLE_SIZE 14
 
 #define PRINT_MATERIAL_WHITE_STRONG_FLEXIBLE 0
 #define PRINT_MATERIAL_FULL_COLOR_SANDSTONE 1
-#define PRINT_MATERIAL_FCS_SCULPTEO (MTL_COST_TABLE_SIZE-1)
+// last one can be set to whatever you like
+#define PRINT_MATERIAL_CUSTOM_MATERIAL 13
+#define PRINT_MATERIAL_FCS_SCULPTEO (PRINT_MATERIAL_CUSTOM_MATERIAL-1)
 
 typedef struct MaterialCost {
     // lame on my part: we really shouldn't be using wide characters in the dialog TODO
     wchar_t *wname;
     char *name;
+    wchar_t *currency;
     // minimum recommended wall thickness in mm, though usually you want to go 50% or more above this
     // Minimum *supported* wall thickness in mm http://www.shapeways.com/tutorials/thin_walls_tutorial
     // White should really be more like 1 mm or even 2 mm, not 0.7 mm - TODO documentation
@@ -155,71 +159,99 @@ extern UnitType gUnitTypeTable[];
 #define EXPT_DEBUG_SHOW_GROUPS			0x0001
 // DEBUG: output welds as lava - TODO
 #define EXPT_DEBUG_SHOW_WELDS			0x0002
-// leave 0x4 and 0x8 for future debugging modes
 
 // Output material file
-#define EXPT_OUTPUT_MATERIALS		    0x0010
+#define EXPT_OUTPUT_MATERIALS		    0x0004
 // Model is meant to be watertight, e.g. for 3D printing
-#define EXPT_3DPRINT				    0x0020
+#define EXPT_3DPRINT				    0x0008
 // Export a noisy color texture instead of simple solid materials
-#define EXPT_OUTPUT_TEXTURE_SWATCHES    0x0040
+#define EXPT_OUTPUT_TEXTURE_SWATCHES    0x0010
 // Export a true block texture instead of simple solid materials
-#define EXPT_OUTPUT_TEXTURE_IMAGES	    0x0080
+#define EXPT_OUTPUT_TEXTURE_IMAGES	    0x0020
 #define EXPT_OUTPUT_TEXTURE (EXPT_OUTPUT_TEXTURE_SWATCHES|EXPT_OUTPUT_TEXTURE_IMAGES)
 
-// should faces be grouped by their material type?
-#define EXPT_GROUP_BY_MATERIAL          0x0100
-
-// Make the model as small as the material chosen allows (colored sandstone currently assumed)
-#define EXPT_MAKE_SMALL				    0x0200
+// For 3d Printing, make the model as small as the material chosen allows (colored sandstone currently assumed)
+#define EXPT_MAKE_SMALL				    0x0040
 
 // These flags are useful as we sometimes want to check for any of them (e.g. for whether
 // to make parts).
 // Fill bubbles, hollow spots inside a model not visible from the outside
 // This can be useful for models for viewing if you never plan to go inside the structure
-#define EXPT_FILL_BUBBLES			    0x0400
+#define EXPT_FILL_BUBBLES			    0x0080
 // Join any two cubes sharing an edge and having different groups (i.e. are different parts)
-#define EXPT_CONNECT_PARTS			    0x0800
+#define EXPT_CONNECT_PARTS			    0x0100
 // Join any two cubes sharing an edge, period. Aggressive, do only if needed by 3D printer.
 // http://www.shapeways.com/tutorials/things-to-keep-in-mind says it's needed, but uploading
 // two separate cubes sharing an edge works fine with Shapeways. The newer
 // http://www.shapeways.com/tutorials/fixing-non-manifold-models doesn't mention shared edges.
-#define EXPT_CONNECT_ALL_EDGES          0x1000
+#define EXPT_CONNECT_ALL_EDGES          0x0200
 // Join any two cubes *in different meta-groups* that share corner tips
-#define EXPT_CONNECT_CORNER_TIPS		0x2000
+#define EXPT_CONNECT_CORNER_TIPS		0x0400
 // Delete objects < 16 blocks or all tree that are not at the ground level
-#define EXPT_DELETE_FLOATING_OBJECTS	0x4000
+#define EXPT_DELETE_FLOATING_OBJECTS	0x0800
 // Hollow out the bottom of the model (TODO: could add a base, with a hole in it)
-#define EXPT_HOLLOW_BOTTOM				0x8000
+#define EXPT_HOLLOW_BOTTOM				0x1000
 // Aggressively hollow out an area, carving from the bottom around tunnels.
 // The danger is that holes can be created which may not get emptied.
-#define EXPT_SUPER_HOLLOW_BOTTOM		0x10000
+#define EXPT_SUPER_HOLLOW_BOTTOM		0x2000
 // Allow BLF_ENTRANCE blocks to act solid when forming air groups. This allows
 // insides of buildings to get sealed off and filled.
-#define EXPT_SEAL_ENTRANCES				0x20000
+#define EXPT_SEAL_ENTRANCES				0x4000
 // Tunnels on the sides and bottom of the solid box are considered bubbles and filled with glass
 // For now, make it the same thing as sealing entrances - I'm not sure it needs yet another checkbox
-#define EXPT_SEAL_SIDE_TUNNELS			0x40000
+#define EXPT_SEAL_SIDE_TUNNELS			0x8000
 
-// do we want to export by block? That is, every block creates a group?
-#define EXPT_GROUP_BY_BLOCK				0x80000
+// should each block type be given a separate material?
+// In OBJ we have two ways to group: there are groups, each group defining an object. We allow
+// two kinds of grouping:
+// * One group for each object type. Example: all acacia logs are an object type, so can be modified as a whole.
+// * One group for each block, with each block fully formed with all its side. Example: each acacia block is an object.
+// There are materials, and we share in different ways:
+// * One material for all objects. This is a find choice for 3D printing, where it doesn't matter.
+// * One material for each object type. So water might be transparent, lava not.
 
-// when exporting objects with OBJ, do we want to export groups at all (overridden by Group by Block, though this doesn't show on the interface dialog currently)
-#define EXPT_OUTPUT_OBJ_GROUPS				0x100000
+// This logic is confusing, so here are some examples:
+// No OBJ export boxes checked (ignore the G3D box for all of these): no group output, single material.
+// Check "Export separate types": all polygons are grouped by type (Grass_Block, Sand, Dirt), single material.
+// Check "Export separate types" and "Separate materials/blocks" (the default): polygons are grouped by type, each type has a material.
+// Check "Export individual blocks": same as above, polygon are grouped by type, each type has a material. However, geometrically, every block has all its faces output.
+// Check "Export individual blocks" and "Separate materials/blocks": each Minecraft block is in its own group, each type has a material, blocks each use the relevant material.
+
+// when exporting objects with OBJ, do we want to export groups at all? For rendering, the default is on; 3D printing, off.
+#define EXPT_OUTPUT_OBJ_GROUPS				0x10000
+// do we want to export by block? That is, every individual Minecraft block is in its own group? Normally off.
+#define EXPT_GROUP_BY_BLOCK					0x20000
+
 // when exporting objects with OBJ, do we want multiple materials?
-// This is the norm, but for things like Blender and Maya, a single material can be less work
-#define EXPT_OUTPUT_OBJ_MATERIAL_PER_TYPE	0x200000
+// This is the norm, but for things like Blender and Maya, a single material can be less work.
+// A single material for all objects has the EXPT_OUTPUT_OBJ_MTL_PER_TYPE off entirely.
+// To have a material for each object type, both of the flags that follow are on. On by default.
+#define EXPT_OUTPUT_OBJ_MULTIPLE_MTLS		0x40000
+// If true (and EXPT_OUTPUT_OBJ_GROUPS is on), then there's a separate material for each type of block.
+#define EXPT_OUTPUT_OBJ_MTL_PER_TYPE		0x80000
+// If true, output each individual block as its own group
+#define EXPT_OUTPUT_EACH_BLOCK_A_GROUP		0x100000
+
+// Special modifiers for material output for OBJ, only:
 // when exporting textures with OBJ, output a uniform material: Ka and Kd set to white (G3D likes this)
-#define EXPT_OUTPUT_OBJ_NEUTRAL_MATERIAL	0x400000
+// no longer used for anything #define EXPT_OUTPUT_OBJ_NEUTRAL_MATERIAL	0x200000
 // when exporting materials with OBJ, output the extra values (G3D likes this)
-#define EXPT_OUTPUT_OBJ_FULL_MATERIAL		0x800000
+#define EXPT_OUTPUT_OBJ_FULL_MATERIAL		0x200000
 
 // relative or absolute coordinates for OBJ
-#define EXPT_OUTPUT_OBJ_REL_COORDINATES		0x1000000
+#define EXPT_OUTPUT_OBJ_REL_COORDINATES		0x400000
+
+// should subtypes (types differentiated by the data value bits) be output as separate textures?
+#define EXPT_OUTPUT_OBJ_MATERIAL_SUBTYPES	0x800000
 
 // use biomes for export
-#define EXPT_BIOME							0x2000000
+#define EXPT_BIOME							0x1000000
+#ifdef SKETCHFAB
+// Sketchfab export (to export only RGBA texture)
+#define EXPT_SKFB							0x2000000
+#endif
 
+// string length for export dialog, etc.
 #define EP_FIELD_LENGTH 20
 
 // linked to the ofn.lpstrFilter in Mineways.cpp
@@ -236,6 +268,20 @@ extern UnitType gUnitTypeTable[];
 
 #define FILE_TYPE_TOTAL         7
 
+#ifdef SKETCHFAB
+typedef struct PublishSkfbData
+{
+    // Sketchfab
+    char skfbApiToken[33];
+    char skfbName[49];
+    char skfbDescription[1025];
+    char skfbTags[256];
+    bool skfbPrivate;
+    char skfbPassword[25];
+    bool skfbDraft;
+    std::string skfbFilePath;
+} PublishSkfbData;
+#endif
 
 typedef struct ExportFileData
 {
@@ -293,7 +339,7 @@ typedef struct ExportFileData
     UINT chkLeavesSolid;    // should tree leaves be output as solid or semitransparent? Normally false, i.e., semitransparent for rendering. Doesn't affect 3D printing
     UINT chkBlockFacesAtBorders;    // should block faces be generated at the borders of the export? False for rendering. Doesn't affect 3D printing.
     UINT chkBiome;
-    UINT chkIndividualBlocks;
+    UINT chkCompositeOverlay;	// true means we'll make a composite texture of anything such as redstone wire that overlays a tile; false means make a separate floating object above the tile.
 
     UINT chkFillBubbles;
     UINT chkSealEntrances;
@@ -318,7 +364,9 @@ typedef struct ExportFileData
     UINT chkShowWelds;
 
     UINT chkMultipleObjects;
+    UINT chkIndividualBlocks;
     UINT chkMaterialPerType;
+    UINT chkMaterialSubtypes;
     UINT chkG3DMaterial;
 
     UINT flags;
@@ -328,7 +376,7 @@ typedef struct ExportFileData
 
 typedef struct FileList {
     int count;
-    wchar_t name[MAX_OUTPUT_FILES][260];  // output file list, MAX_PATH == 260
+    wchar_t name[MAX_OUTPUT_FILES][520];  // output file list, MAX_PATH == 260
 } FileList;
 
 
@@ -336,7 +384,7 @@ typedef struct Options {
     int worldType;          // what world we're looking at: HELL, ENDER, etc., and other option toggles
     int saveFilterFlags;	// what objects should be kept - basic difference is flatsides get shown
     int exportFlags;		// exporting options
-    int moreExportMemory;             // use more memory for caching or not?
+    int moreExportMemory;   // use more memory for caching or not?
     int currentCacheSize;
     ExportFileData *pEFD;   // print or view option values, etc.
     ///// these are really statistics, but let's shove them in here - so sloppy!
@@ -349,26 +397,20 @@ typedef struct Options {
     float block_inch;
 } Options;
 
-
 // number of official Minecraft blocks (take highest valid block ID and add 1)
-#define NUM_BLOCKS_STANDARD 198
+#define NUM_BLOCKS_STANDARD 253
 // number of blocks we want to show on the map (includes the unknown one)
 #define NUM_BLOCKS_MAP (NUM_BLOCKS_STANDARD+1)
+// number of blocks with entries in block info table - now that 255 is used, we need this
+#define NUM_BLOCKS_DEFINED 256
 // Total number of blocks. We used to include 16 wool blocks, but have now deleted these.
 // NUM_BLOCKS_MAP could probably be turned into NUM_BLOCKS at this point, but keeping both for now
 // until the code settles down.
 // NOTE! if we ever go past 256, search for 256 in code and start fixing!
 #define NUM_BLOCKS NUM_BLOCKS_MAP
 
-// number of texture swatches
-#define NUM_SWATCHES (NUM_BLOCKS+256)
-
 // absolute max the 2x2 * 16x16 space of swatches could have (without borders)
 #define NUM_MAX_SWATCHES (4*16*16)
-
-// row & column to swatch location
-#define SWATCH_XY_TO_INDEX(x,y) (NUM_BLOCKS + (y)*16 + (x))
-
 
 
 
@@ -408,25 +450,28 @@ typedef struct Options {
 // is an entrance of some sort, for sealing off building interiors
 #define BLF_ENTRANCE        0x8000
 // export image texture for this object, as it makes sense - almost everything has this property (i.e. has a texture tile)
-#define BLF_IMAGE_TEXTURE   0x10000
+// actually, now everything has this property, so it's eliminated
+//#define BLF_IMAGE_TEXTURE   0x10000
 // this object emits light
-#define BLF_EMITTER         0x20000
+#define BLF_EMITTER         0x10000
 // this object attaches to fences; note that fences do not have this property themselves, so that nether & regular fence won't attach
-#define BLF_FENCE_NEIGHBOR	0x40000
+#define BLF_FENCE_NEIGHBOR	0x20000
 // this object outputs its true geometry (not just a block) for rendering
-#define BLF_TRUE_GEOMETRY	0x80000
+#define BLF_TRUE_GEOMETRY	0x40000
 // this object outputs its special non-full-block geometry for 3D printing, if the printer can glue together the bits.
 // Slightly different than TRUE_GEOMETRY in that things that are just too thin don't have this bit set.
-#define BLF_3D_BIT          0x100000
+#define BLF_3D_BIT          0x80000
 // this object is a 3D bit, and this bit is set if it can actually glue horizontal neighboring blocks together
 // - not really used. TODO - may want to use this to decide whether objects should be grouped together or whatever.
-#define BLF_3D_BIT_GLUE     0x200000
+#define BLF_3D_BIT_GLUE     0x100000
 // set if the block does not affect fluid height
-#define BLF_DNE_FLUID		0x400000
+#define BLF_DNE_FLUID		0x200000
 // set if the block connects to redstone - do only if there's no orientation to the block, e.g. repeaters attach only on two sides, so don't have this flag
-#define BLF_CONNECTS_REDSTONE		0x800000
+#define BLF_CONNECTS_REDSTONE		0x400000
 // has no geometry, on purpose
-#define BLF_NONE			0x1000000
+#define BLF_NONE			0x800000
+// is an offset tile, rendered separately: rails, vines, lily pad, redstone, ladder (someday, tripwire? TODO)
+#define BLF_OFFSET			0x1000000
 
 #define BLF_CLASS_SET   (BLF_NONE|BLF_WHOLE|BLF_ALMOST_WHOLE|BLF_STAIRS|BLF_HALF|BLF_MIDDLER|BLF_BILLBOARD|BLF_PANE|BLF_FLATTOP|BLF_FLATSIDE|BLF_SMALL_MIDDLER|BLF_SMALL_BILLBOARD)
 
@@ -452,6 +497,7 @@ typedef struct BlockDefinition {
     float alpha;
     int txrX;   // column and row, from upper left, of 16x16 tiles in terrainExt.png, for TOP view of block
     int txrY;
+    unsigned char subtype_mask;	// bits that are used in the data value to determine whether this is a separate material
     unsigned int flags;
 } BlockDefinition;
 
@@ -550,13 +596,14 @@ enum block_types {
     BLOCK_JUKEBOX = 0x54,
     BLOCK_FENCE = 0x55,
     BLOCK_PUMPKIN = 0x56,
+    BLOCK_GLOWSTONE = 0x59,
     BLOCK_JACK_O_LANTERN = 0x5b,
     BLOCK_CAKE = 0x5c,
     BLOCK_REDSTONE_REPEATER_OFF = 0x5d,
     BLOCK_REDSTONE_REPEATER_ON = 0x5e,
     BLOCK_STAINED_GLASS = 0x5f,	// was BLOCK_LOCKED_CHEST, which went away in 1.7
     BLOCK_TRAPDOOR = 0x60,
-    BLOCK_HIDDEN_SILVERFISH = 0x61,
+    BLOCK_MONSTER_EGG = 0x61,
     BLOCK_STONE_BRICKS = 0x62,
     BLOCK_HUGE_BROWN_MUSHROOM = 0x63,
     BLOCK_HUGE_RED_MUSHROOM = 0x64,
@@ -579,17 +626,19 @@ enum block_types {
     BLOCK_BREWING_STAND = 0x75,
     BLOCK_CAULDRON = 0x76,
     BLOCK_END_PORTAL_FRAME = 0x78,
+    BLOCK_END_STONE = 0x79,
     BLOCK_DRAGON_EGG = 0x7a,
     BLOCK_WOODEN_DOUBLE_SLAB = 0x7d,
     BLOCK_WOODEN_SLAB = 0x7e,
     BLOCK_COCOA_PLANT = 0x7f,
     BLOCK_SANDSTONE_STAIRS = 0x80,
     BLOCK_ENDER_CHEST = 0x82,
-    BLOCK_TRIPWIRE_HOOK = 0x83,
-    BLOCK_TRIPWIRE = 0x84,
-    BLOCK_SPRUCE_WOOD_STAIRS = 0x86,
+    BLOCK_TRIPWIRE_HOOK = 131,
+    BLOCK_TRIPWIRE = 132,
+    BLOCK_SPRUCE_WOOD_STAIRS = 134,
     BLOCK_BIRCH_WOOD_STAIRS = 0x87,
     BLOCK_JUNGLE_WOOD_STAIRS = 0x88,
+    BLOCK_COMMAND_BLOCK = 0x89,
     BLOCK_BEACON = 0x8A,
     BLOCK_COBBLESTONE_WALL = 0x8B,
     BLOCK_FLOWER_POT = 0x8C,
@@ -603,8 +652,8 @@ enum block_types {
     // TODO
     BLOCK_WEIGHTED_PRESSURE_PLATE_LIGHT = 0x93,
     BLOCK_WEIGHTED_PRESSURE_PLATE_HEAVY = 0x94,
-    BLOCK_REDSTONE_COMPARATOR_INACTIVE = 0x95,	// TODO line 1916
-    BLOCK_REDSTONE_COMPARATOR_ACTIVE = 0x96,
+    BLOCK_REDSTONE_COMPARATOR = 0x95,
+    BLOCK_REDSTONE_COMPARATOR_DEPRECATED = 0x96,
     BLOCK_DAYLIGHT_SENSOR = 0x97,	// TODO line 1916, make like trapdoor?
     BLOCK_REDSTONE_BLOCK = 0x98,
     BLOCK_NETHER_QUARTZ_ORE = 0x99,
@@ -614,7 +663,7 @@ enum block_types {
     BLOCK_ACTIVATOR_RAIL = 0x9D,
     BLOCK_DROPPER = 0x9E,
     // 1.6 & 1.7.2
-    BLOCK_STAINED_CLAY = 0x9F,
+    BLOCK_STAINED_CLAY = 159,	// now called hardened clay
     BLOCK_STAINED_GLASS_PANE = 0xA0,
     BLOCK_AD_LEAVES = 0xA1,
     BLOCK_AD_LOG = 0xA2,
@@ -654,6 +703,35 @@ enum block_types {
     BLOCK_JUNGLE_DOOR = 0xC3,
     BLOCK_ACACIA_DOOR = 0xC4,
     BLOCK_DARK_OAK_DOOR = 0xC5,
+    BLOCK_END_ROD = 0xC6,
+    BLOCK_CHORUS_PLANT = 0xC7,
+    BLOCK_CHORUS_FLOWER = 0xC8,
+    BLOCK_PURPUR_BLOCK = 0xC9,
+    BLOCK_PURPUR_PILLAR = 0xCA,
+    BLOCK_PURPUR_STAIRS = 0xCB,
+    BLOCK_PURPUR_DOUBLE_SLAB = 0xCC,
+    BLOCK_PURPUR_SLAB = 0xCD,
+    BLOCK_END_BRICKS = 0xCE,
+    BLOCK_BEETROOT_SEEDS = 0xCF,
+    BLOCK_GRASS_PATH = 0xD0,
+    BLOCK_END_GATEWAY = 0xD1,
+    BLOCK_REPEATING_COMMAND_BLOCK = 0xD2,
+    BLOCK_CHAIN_COMMAND_BLOCK = 0xD3,
+    BLOCK_FROSTED_ICE = 0xD4,
+    BLOCK_MAGMA_BLOCK = 0xD5,
+    BLOCK_NETHER_WART_BLOCK = 0xD6,
+    BLOCK_NETHER_BRICK = 0xD7,
+    BLOCK_BONE_BLOCK = 0xD8,
+    BLOCK_STRUCTURE_VOID = 0xD9,
+    BLOCK_OBSERVER = 0xDA,
+    BLOCK_SHULKER_CHEST = 0xDB,
+    BLOCK_GLAZED_TERRACOTTA = 0xEB,
+    BLOCK_CONCRETE = 0xFB,
+    BLOCK_CONCRETE_POWDER = 0xFC,
+
+    BLOCK_FAKE = 0xFE,	// I hope we never get this far
+
+    BLOCK_STRUCTURE_BLOCK = 0xFF,
 
     BLOCK_UNKNOWN = (NUM_BLOCKS_STANDARD),
 };
